@@ -37,16 +37,21 @@ def test_slice_horizontal_covers_expected_region() -> None:
 
 
 def test_effective_side_with_even_mirroring() -> None:
-    assert effective_side("right", mirror_even=True, page_idx_zero_based=0) == "right"
-    assert effective_side("right", mirror_even=True, page_idx_zero_based=1) == "left"
-    assert effective_side("left", mirror_even=True, page_idx_zero_based=1) == "right"
+    assert effective_side("right", mirror_even=True,
+                          page_idx_zero_based=0) == "right"
+    assert effective_side("right", mirror_even=True,
+                          page_idx_zero_based=1) == "left"
+    assert effective_side("left", mirror_even=True,
+                          page_idx_zero_based=1) == "right"
 
 
 def test_expected_dimensions() -> None:
     metrics = [
-        PageMetrics(index=0, width_pts=360.0, height_pts=576.0, width_px=1500, height_px=2400),
+        PageMetrics(index=0, width_pts=360.0, height_pts=576.0,
+                    width_px=1500, height_px=2400),
     ]
-    dims = expected_edge_dimensions(metrics=metrics, page_count=300, edge_width_pts=36.0, dpi=300)
+    dims = expected_edge_dimensions(
+        metrics=metrics, page_count=300, edge_width_pts=36.0, dpi=300)
     assert dims["strip_px"] == 150
     assert dims["fore_w"] == 150
     assert dims["fore_h"] == 2400 * 300

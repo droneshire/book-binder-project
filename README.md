@@ -146,7 +146,7 @@ This creates `.venv`, installs dependencies, and launches Streamlit.
 - `make init` - create venv + upgrade pip
 - `make install` - install package (`pip install -e .`)
 - `make run_app` - run Streamlit app
-- `make format` - run `black`
+- `make format` - run `autopep8` then `black`
 - `make lint` - run `mypy` + `pylint`
 - `make test` - run `pytest`
 - `make build_standalone` - build one-file executable with PyInstaller

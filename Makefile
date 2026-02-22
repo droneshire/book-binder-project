@@ -4,6 +4,7 @@ PIP := $(PYTHON) -m pip
 STREAMLIT := $(VENV)/bin/streamlit
 PYINSTALLER := $(VENV)/bin/pyinstaller
 BLACK := $(VENV)/bin/black
+AUTOPEP8 := $(VENV)/bin/autopep8
 MYPY := $(VENV)/bin/mypy
 PYLINT := $(VENV)/bin/pylint
 PYTEST := $(VENV)/bin/pytest
@@ -36,7 +37,8 @@ build_standalone: install
 		streamlit_app.py
 
 format: install
-	$(PIP) install black
+	$(PIP) install autopep8 black
+	$(AUTOPEP8) --in-place --recursive src streamlit_app.py tests
 	$(BLACK) src streamlit_app.py
 
 lint: install
