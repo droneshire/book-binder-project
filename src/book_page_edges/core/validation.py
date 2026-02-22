@@ -26,7 +26,9 @@ def validate_uploaded_image(
         try:
             img_dpi = float(dpi_info[0])
             if img_dpi < 300:
-                warnings.append(f"{label}: embedded DPI is {img_dpi:.0f}; 300+ is recommended.")
+                warnings.append(
+                    f"{label}: embedded DPI is {img_dpi:.0f}; 300+ is recommended."
+                )
         except (TypeError, ValueError):
             pass
 

@@ -22,13 +22,17 @@ def safe_slice_bounds(start: float, end: float, limit: int) -> tuple[int, int]:
 
 def slice_vertical(img: Image.Image, page_idx: int, total_pages: int) -> Image.Image:
     h = img.height
-    y0, y1 = safe_slice_bounds((page_idx / total_pages) * h, ((page_idx + 1) / total_pages) * h, h)
+    y0, y1 = safe_slice_bounds(
+        (page_idx / total_pages) * h, ((page_idx + 1) / total_pages) * h, h
+    )
     return img.crop((0, y0, img.width, y1))
 
 
 def slice_horizontal(img: Image.Image, page_idx: int, total_pages: int) -> Image.Image:
     w = img.width
-    x0, x1 = safe_slice_bounds((page_idx / total_pages) * w, ((page_idx + 1) / total_pages) * w, w)
+    x0, x1 = safe_slice_bounds(
+        (page_idx / total_pages) * w, ((page_idx + 1) / total_pages) * w, w
+    )
     return img.crop((x0, 0, x1, img.height))
 
 

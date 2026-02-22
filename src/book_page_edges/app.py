@@ -28,7 +28,9 @@ def _hex_to_rgb(color: str) -> tuple[int, int, int]:
     return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
 
 
-def _interpolate_rgb(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+def _interpolate_rgb(
+    a: tuple[int, int, int], b: tuple[int, int, int], t: float
+) -> tuple[int, int, int]:
     return (
         round(a[0] + (b[0] - a[0]) * t),
         round(a[1] + (b[1] - a[1]) * t),
@@ -36,7 +38,9 @@ def _interpolate_rgb(a: tuple[int, int, int], b: tuple[int, int, int], t: float)
     )
 
 
-def _build_gradient_image(width: int, height: int, c1: str, c2: str, vertical: bool) -> Image.Image:
+def _build_gradient_image(
+    width: int, height: int, c1: str, c2: str, vertical: bool
+) -> Image.Image:
     a = _hex_to_rgb(c1)
     b = _hex_to_rgb(c2)
     img = Image.new("RGBA", (width, height))
@@ -70,7 +74,9 @@ def _validate_top_bottom_image(
 ) -> tuple[list[str], Image.Image]:
     expected_w = dims["top_w"]
     expected_h = dims["top_h"]
-    warnings, img = validate_uploaded_image(uploaded_file, label, expected_w, expected_h)
+    warnings, img = validate_uploaded_image(
+        uploaded_file, label, expected_w, expected_h
+    )
 
     # Accept StyledBookEdges-like vertical images and rotate them automatically.
     if img.size == (expected_h, expected_w):
@@ -140,7 +146,9 @@ def _render_pdf_preview_images(
         for idx in range(start, min(total, start + page_window)):
             page = doc[idx]
             pix = page.get_pixmap(matrix=fitz.Matrix(0.16, 0.16), alpha=False)
-            previews.append(Image.frombytes("RGB", (pix.width, pix.height), pix.samples))
+            previews.append(
+                Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            )
         return previews, total, start
 
 
@@ -172,7 +180,9 @@ def render_info(
         f"**{analysis.first_trim_w_pts:.2f}x{analysis.first_trim_h_pts:.2f} pts** / "
         f"**{analysis.first_media_w_pts:.2f}x{analysis.first_media_h_pts:.2f} pts**"
     )
-    st.write(f"Bleed detected on source PDF: **{'Yes' if analysis.has_bleed_on_first_page else 'No'}**")
+    st.write(
+        f"Bleed detected on source PDF: **{'Yes' if analysis.has_bleed_on_first_page else 'No'}**"
+    )
     if analysis.mixed_trim_sizes:
         st.warning("Mixed trim sizes detected across pages.")
 
@@ -217,11 +227,17 @@ def _edge_images_from_inputs(
     if mode == "Upload Images":
         col1, col2 = st.columns(2)
         with col1:
-            fore_upload = st.file_uploader("🖼️ Fore-edge Image", type=["png"], key="fore_upload")
+            fore_upload = st.file_uploader(
+                "🖼️ Fore-edge Image", type=["png"], key="fore_upload"
+            )
         with col2:
             if include_top_bottom:
-                top_upload = st.file_uploader("🖼️ Top Edge Image", type=["png"], key="top_upload")
-                bottom_upload = st.file_uploader("🖼️ Bottom Edge Image", type=["png"], key="bottom_upload")
+                top_upload = st.file_uploader(
+                    "🖼️ Top Edge Image", type=["png"], key="top_upload"
+                )
+                bottom_upload = st.file_uploader(
+                    "🖼️ Bottom Edge Image", type=["png"], key="bottom_upload"
+                )
             else:
                 top_upload = None
                 bottom_upload = None
@@ -229,7 +245,9 @@ def _edge_images_from_inputs(
         if fore_upload is None:
             valid = False
         else:
-            w, fore_img = validate_uploaded_image(fore_upload, "Fore edge", dims["fore_w"], dims["fore_h"])
+            w, fore_img = validate_uploaded_image(
+                fore_upload, "Fore edge", dims["fore_w"], dims["fore_h"]
+            )
             warnings.extend(w)
 
         if include_top_bottom:
@@ -238,17 +256,25 @@ def _edge_images_from_inputs(
             else:
                 w, top_img = _validate_top_bottom_image(top_upload, "Top edge", dims)
                 warnings.extend(w)
-                w, bottom_img = _validate_top_bottom_image(bottom_upload, "Bottom edge", dims)
+                w, bottom_img = _validate_top_bottom_image(
+                    bottom_upload, "Bottom edge", dims
+                )
                 warnings.extend(w)
 
     elif mode == "Gradient":
         c1 = st.color_picker("🌈 Gradient Start Color", "#1d4ed8", key="grad_c1")
         c2 = st.color_picker("🌈 Gradient End Color", "#0f766e", key="grad_c2")
 
-        fore_img = _build_gradient_image(dims["fore_w"], dims["fore_h"], c1, c2, vertical=True)
+        fore_img = _build_gradient_image(
+            dims["fore_w"], dims["fore_h"], c1, c2, vertical=True
+        )
         if include_top_bottom:
-            top_img = _build_gradient_image(dims["top_w"], dims["top_h"], c1, c2, vertical=False)
-            bottom_img = _build_gradient_image(dims["top_w"], dims["top_h"], c1, c2, vertical=False)
+            top_img = _build_gradient_image(
+                dims["top_w"], dims["top_h"], c1, c2, vertical=False
+            )
+            bottom_img = _build_gradient_image(
+                dims["top_w"], dims["top_h"], c1, c2, vertical=False
+            )
 
     else:  # Solid Color
         color = st.color_picker("🎯 Edge Color", "#0f172a", key="solid_c")
@@ -275,15 +301,35 @@ def main() -> None:
 
     with st.sidebar:
         st.header("⚙️ Output Settings")
-        preset = st.selectbox("Printer Preset", options=list(PRINTER_PRESETS.keys()), index=1)
+        preset = st.selectbox(
+            "Printer Preset", options=list(PRINTER_PRESETS.keys()), index=1
+        )
         preset_vals = PRINTER_PRESETS[preset]
 
-        dpi = st.number_input("DPI", min_value=72, max_value=1200, value=DEFAULT_DPI, step=1)
-        edge_width_pts = st.number_input(
-            "Edge Width (pts)", min_value=1.0, max_value=200.0, value=DEFAULT_EDGE_WIDTH_PTS, step=1.0
+        dpi = st.number_input(
+            "DPI", min_value=72, max_value=1200, value=DEFAULT_DPI, step=1
         )
-        fore_opacity = st.slider("Edge Opacity", min_value=0.0, max_value=1.0, value=DEFAULT_FORE_OPACITY, step=0.01)
-        jpeg_quality = st.slider("JPEG Quality", min_value=1, max_value=95, value=DEFAULT_JPEG_QUALITY, step=1)
+        edge_width_pts = st.number_input(
+            "Edge Width (pts)",
+            min_value=1.0,
+            max_value=200.0,
+            value=DEFAULT_EDGE_WIDTH_PTS,
+            step=1.0,
+        )
+        fore_opacity = st.slider(
+            "Edge Opacity",
+            min_value=0.0,
+            max_value=1.0,
+            value=DEFAULT_FORE_OPACITY,
+            step=0.01,
+        )
+        jpeg_quality = st.slider(
+            "JPEG Quality",
+            min_value=1,
+            max_value=95,
+            value=DEFAULT_JPEG_QUALITY,
+            step=1,
+        )
 
         st.header("🩸 Bleed")
         add_bleed = st.checkbox("Add Bleed To Output", value=False)
@@ -295,10 +341,14 @@ def main() -> None:
             step=0.005,
             format="%.3f",
         )
-        apply_edges_in_bleed_only = st.checkbox("Apply Edges In Bleed Area Only", value=True)
+        apply_edges_in_bleed_only = st.checkbox(
+            "Apply Edges In Bleed Area Only", value=True
+        )
 
         st.header("📄 Paper")
-        paper_type = st.selectbox("Paper Type", options=list(PAPER_TYPES_INCH_PER_PAGE.keys()), index=0)
+        paper_type = st.selectbox(
+            "Paper Type", options=list(PAPER_TYPES_INCH_PER_PAGE.keys()), index=0
+        )
         st.caption(f"Preset safe area ({preset}): {preset_vals['safe_area_in']:.3f} in")
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
@@ -310,7 +360,9 @@ def main() -> None:
     )
 
     if interior_source == "Upload Interior PDF":
-        pdf_upload = st.file_uploader("📎 Your manuscript PDF with bleed", type=["pdf"], key="pdf_upload")
+        pdf_upload = st.file_uploader(
+            "📎 Your manuscript PDF with bleed", type=["pdf"], key="pdf_upload"
+        )
         if pdf_upload is None:
             st.info("Upload a print-ready interior PDF to continue.")
             return
@@ -318,11 +370,17 @@ def main() -> None:
     else:
         c1, c2, c3 = st.columns(3)
         with c1:
-            trim_width_in = st.number_input("Trim Width (in)", min_value=1.0, max_value=12.0, value=5.0, step=0.01)
+            trim_width_in = st.number_input(
+                "Trim Width (in)", min_value=1.0, max_value=12.0, value=5.0, step=0.01
+            )
         with c2:
-            trim_height_in = st.number_input("Trim Height (in)", min_value=1.0, max_value=14.0, value=8.0, step=0.01)
+            trim_height_in = st.number_input(
+                "Trim Height (in)", min_value=1.0, max_value=14.0, value=8.0, step=0.01
+            )
         with c3:
-            blank_page_count = st.number_input("Page Count", min_value=1, max_value=2000, value=300, step=1)
+            blank_page_count = st.number_input(
+                "Page Count", min_value=1, max_value=2000, value=300, step=1
+            )
 
         try:
             pdf_bytes = create_blank_pdf(
@@ -333,7 +391,9 @@ def main() -> None:
         except Exception as exc:
             st.error(f"Failed to generate blank interior PDF: {exc}")
             return
-        st.caption("🧱 Using generated blank interior PDF. Output will be edge-sliced artwork on blank pages.")
+        st.caption(
+            "🧱 Using generated blank interior PDF. Output will be edge-sliced artwork on blank pages."
+        )
 
     bleed_pts = inches_to_pts(float(bleed_in))
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
@@ -381,7 +441,9 @@ def main() -> None:
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
     try:
-        fore_img, top_img, bottom_img, image_warnings, ready = _edge_images_from_inputs(input_mode, edge_config, dims)
+        fore_img, top_img, bottom_img, image_warnings, ready = _edge_images_from_inputs(
+            input_mode, edge_config, dims
+        )
     except Exception as exc:
         st.error(f"Failed while preparing edge inputs: {exc}")
         return
@@ -394,7 +456,9 @@ def main() -> None:
         return
 
     if add_bleed and apply_edges_in_bleed_only and edge_width_pts > bleed_pts:
-        st.warning("Edge width is larger than bleed and will be clamped to bleed width.")
+        st.warning(
+            "Edge width is larger than bleed and will be clamped to bleed width."
+        )
 
     if not ready:
         st.warning("Complete required edge inputs to generate output.")
@@ -490,7 +554,9 @@ def main() -> None:
             st.subheader("👀 Preview")
             nav_cols = st.columns([1, 2, 1])
             with nav_cols[0]:
-                prev_clicked = st.button("⬅️", disabled=clamped_start == 0, key="preview_prev")
+                prev_clicked = st.button(
+                    "⬅️", disabled=clamped_start == 0, key="preview_prev"
+                )
             with nav_cols[1]:
                 end_page = min(total_pages, clamped_start + len(preview_imgs))
                 st.markdown(
@@ -498,20 +564,28 @@ def main() -> None:
                     unsafe_allow_html=True,
                 )
             with nav_cols[2]:
-                next_clicked = st.button("➡️", disabled=(clamped_start + len(preview_imgs)) >= total_pages, key="preview_next")
+                next_clicked = st.button(
+                    "➡️",
+                    disabled=(clamped_start + len(preview_imgs)) >= total_pages,
+                    key="preview_next",
+                )
 
             if prev_clicked:
                 st.session_state["preview_start_page"] = max(0, clamped_start - 1)
                 st.rerun()
             if next_clicked:
-                st.session_state["preview_start_page"] = min(total_pages - 1, clamped_start + 1)
+                st.session_state["preview_start_page"] = min(
+                    total_pages - 1, clamped_start + 1
+                )
                 st.rerun()
 
             left_page_num = clamped_start + 1
             right_page_num = clamped_start + 2
             left_uri = _to_data_uri(_thumbnail(preview_imgs[0], max_w=160, max_h=220))
             if len(preview_imgs) > 1:
-                right_uri = _to_data_uri(_thumbnail(preview_imgs[1], max_w=160, max_h=220))
+                right_uri = _to_data_uri(
+                    _thumbnail(preview_imgs[1], max_w=160, max_h=220)
+                )
             else:
                 right_uri = ""
 

@@ -68,7 +68,9 @@ def generate_output_pdf(
             content_y1 = base_canvas.height
 
         if fore_img is not None:
-            sl = slice_vertical(fore_img, i, total_pages).resize((strip_px, canvas.height), Image.Resampling.LANCZOS)
+            sl = slice_vertical(fore_img, i, total_pages).resize(
+                (strip_px, canvas.height), Image.Resampling.LANCZOS
+            )
             sl = apply_opacity(sl, fore_opacity)
             side_now = effective_side(side, mirror_even, i)
 
@@ -85,7 +87,9 @@ def generate_output_pdf(
                 canvas.paste(left_sl, (left_x, 0), left_sl)
 
         if top_img is not None:
-            sl_top = slice_horizontal(top_img, i, total_pages).resize((canvas.width, strip_px), Image.Resampling.LANCZOS)
+            sl_top = slice_horizontal(top_img, i, total_pages).resize(
+                (canvas.width, strip_px), Image.Resampling.LANCZOS
+            )
             sl_top = apply_opacity(sl_top, fore_opacity)
             top_y = 0
             if add_bleed and apply_edges_in_bleed_only:
@@ -93,7 +97,9 @@ def generate_output_pdf(
             canvas.paste(sl_top, (0, top_y), sl_top)
 
         if bottom_img is not None:
-            sl_bottom = slice_horizontal(bottom_img, i, total_pages).resize((canvas.width, strip_px), Image.Resampling.LANCZOS)
+            sl_bottom = slice_horizontal(bottom_img, i, total_pages).resize(
+                (canvas.width, strip_px), Image.Resampling.LANCZOS
+            )
             sl_bottom = apply_opacity(sl_bottom, fore_opacity)
             bottom_y = canvas.height - strip_px
             if add_bleed and apply_edges_in_bleed_only:

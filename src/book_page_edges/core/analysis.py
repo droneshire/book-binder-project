@@ -46,7 +46,9 @@ def analyze_pdf(doc: fitz.Document, dpi: int) -> tuple[PdfAnalysis, list[PageMet
         first_trim_h_pts=trim.height,
         first_media_w_pts=media.width,
         first_media_h_pts=media.height,
-        has_bleed_on_first_page=(media.width > trim.width or media.height > trim.height),
+        has_bleed_on_first_page=(
+            media.width > trim.width or media.height > trim.height
+        ),
         mixed_trim_sizes=mixed_trim,
     )
     return analysis, metrics
