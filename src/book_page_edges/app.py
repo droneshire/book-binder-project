@@ -125,13 +125,16 @@ def _build_edge_bundle_zip(
     return out.getvalue()
 
 
-def _render_pdf_preview_image(pdf_bytes: bytes) -> Image.Image:
+def _render_pdf_preview_images(pdf_bytes: bytes) -> list[Image.Image]:
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
         if len(doc) == 0:
             raise ValueError("Generated PDF has no pages")
-        page = doc[0]
-        pix = page.get_pixmap(matrix=fitz.Matrix(0.35, 0.35), alpha=False)
-        return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+        previews: list[Image.Image] = []
+        for idx in range(min(2, len(doc))):
+            page = doc[idx]
+            pix = page.get_pixmap(matrix=fitz.Matrix(0.22, 0.22), alpha=False)
+            previews.append(Image.frombytes("RGB", (pix.width, pix.height), pix.samples))
+        return previews
 
 
 def render_info(
@@ -446,9 +449,16 @@ def main() -> None:
         size_mb = len(output_pdf) / (1024 * 1024)
         st.success(f"✅ Output generated successfully. File size: {size_mb:.2f} MB")
         try:
-            preview_img = _render_pdf_preview_image(output_pdf)
+            preview_imgs = _render_pdf_preview_images(output_pdf)
             st.subheader("👀 Preview")
-            st.image(preview_img, caption="Generated output preview (page 1)", use_container_width=True)
+            cols = st.columns(2)
+            with cols[0]:
+                st.image(preview_imgs[0], caption="Page 1", use_container_width=False, width=260)
+            with cols[1]:
+                if len(preview_imgs) > 1:
+                    st.image(preview_imgs[1], caption="Page 2", use_container_width=False, width=260)
+                else:
+                    st.caption("Only one page available.")
         except Exception as exc:
             st.warning(f"Preview unavailable: {exc}")
         st.download_button(
