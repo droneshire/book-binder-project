@@ -1,6 +1,7 @@
 import io
 import json
 import zipfile
+import base64
 
 import fitz
 import streamlit as st
@@ -125,16 +126,35 @@ def _build_edge_bundle_zip(
     return out.getvalue()
 
 
-def _render_pdf_preview_images(pdf_bytes: bytes) -> list[Image.Image]:
+def _render_pdf_preview_images(
+    pdf_bytes: bytes,
+    start_page: int = 0,
+    page_window: int = 2,
+) -> tuple[list[Image.Image], int, int]:
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-        if len(doc) == 0:
+        total = len(doc)
+        if total == 0:
             raise ValueError("Generated PDF has no pages")
+        start = max(0, min(start_page, total - 1))
         previews: list[Image.Image] = []
-        for idx in range(min(2, len(doc))):
+        for idx in range(start, min(total, start + page_window)):
             page = doc[idx]
-            pix = page.get_pixmap(matrix=fitz.Matrix(0.22, 0.22), alpha=False)
+            pix = page.get_pixmap(matrix=fitz.Matrix(0.16, 0.16), alpha=False)
             previews.append(Image.frombytes("RGB", (pix.width, pix.height), pix.samples))
-        return previews
+        return previews, total, start
+
+
+def _thumbnail(img: Image.Image, max_w: int = 220, max_h: int = 320) -> Image.Image:
+    out = img.copy()
+    out.thumbnail((max_w, max_h))
+    return out
+
+
+def _to_data_uri(img: Image.Image) -> str:
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    b64 = base64.b64encode(out.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
 
 
 def render_info(
@@ -413,6 +433,11 @@ def main() -> None:
             )
         return
 
+    if "generated_output_pdf" not in st.session_state:
+        st.session_state["generated_output_pdf"] = None
+    if "preview_start_page" not in st.session_state:
+        st.session_state["preview_start_page"] = 0
+
     if st.button("🚀 Generate Styled Edge PDF", type="primary"):
         progress = st.progress(0.0)
         status = st.empty()
@@ -446,24 +471,78 @@ def main() -> None:
             progress.empty()
             status.empty()
 
-        size_mb = len(output_pdf) / (1024 * 1024)
+        st.session_state["generated_output_pdf"] = output_pdf
+        st.session_state["preview_start_page"] = 0
+
+    stored_output_pdf = st.session_state.get("generated_output_pdf")
+    if stored_output_pdf is not None:
+        size_mb = len(stored_output_pdf) / (1024 * 1024)
         st.success(f"✅ Output generated successfully. File size: {size_mb:.2f} MB")
         try:
-            preview_imgs = _render_pdf_preview_images(output_pdf)
+            preview_start = int(st.session_state.get("preview_start_page", 0))
+            preview_imgs, total_pages, clamped_start = _render_pdf_preview_images(
+                stored_output_pdf,
+                start_page=preview_start,
+                page_window=2,
+            )
+            st.session_state["preview_start_page"] = clamped_start
+
             st.subheader("👀 Preview")
-            cols = st.columns(2)
-            with cols[0]:
-                st.image(preview_imgs[0], caption="Page 1", use_container_width=False, width=260)
-            with cols[1]:
-                if len(preview_imgs) > 1:
-                    st.image(preview_imgs[1], caption="Page 2", use_container_width=False, width=260)
-                else:
-                    st.caption("Only one page available.")
+            nav_cols = st.columns([1, 2, 1])
+            with nav_cols[0]:
+                prev_clicked = st.button("⬅️", disabled=clamped_start == 0, key="preview_prev")
+            with nav_cols[1]:
+                end_page = min(total_pages, clamped_start + len(preview_imgs))
+                st.markdown(
+                    f"<div style='text-align:center; padding-top:8px;'>Pages {clamped_start + 1}-{end_page} of {total_pages}</div>",
+                    unsafe_allow_html=True,
+                )
+            with nav_cols[2]:
+                next_clicked = st.button("➡️", disabled=(clamped_start + len(preview_imgs)) >= total_pages, key="preview_next")
+
+            if prev_clicked:
+                st.session_state["preview_start_page"] = max(0, clamped_start - 1)
+                st.rerun()
+            if next_clicked:
+                st.session_state["preview_start_page"] = min(total_pages - 1, clamped_start + 1)
+                st.rerun()
+
+            left_page_num = clamped_start + 1
+            right_page_num = clamped_start + 2
+            left_uri = _to_data_uri(_thumbnail(preview_imgs[0], max_w=160, max_h=220))
+            if len(preview_imgs) > 1:
+                right_uri = _to_data_uri(_thumbnail(preview_imgs[1], max_w=160, max_h=220))
+            else:
+                right_uri = ""
+
+            if right_uri:
+                right_block = (
+                    "<div style='text-align:center;'>"
+                    f"<img src='{right_uri}' style='width:160px; height:220px; object-fit:contain; border:1px solid #ddd; border-radius:8px; background:#fff;' />"
+                    f"<div style='font-size:0.85rem; margin-top:6px;'>Page {right_page_num}</div>"
+                    "</div>"
+                )
+            else:
+                right_block = (
+                    "<div style='display:flex; align-items:center; font-size:0.85rem; color:#666;'>"
+                    "Only one page available."
+                    "</div>"
+                )
+            html = (
+                "<div style='display:flex; justify-content:center; gap:16px; margin:8px 0 14px 0;'>"
+                "<div style='text-align:center;'>"
+                f"<img src='{left_uri}' style='width:160px; height:220px; object-fit:contain; border:1px solid #ddd; border-radius:8px; background:#fff;' />"
+                f"<div style='font-size:0.85rem; margin-top:6px;'>Page {left_page_num}</div>"
+                "</div>"
+                f"{right_block}"
+                "</div>"
+            )
+            st.markdown(html, unsafe_allow_html=True)
         except Exception as exc:
             st.warning(f"Preview unavailable: {exc}")
         st.download_button(
             label="⬇️ Download output_edges.pdf",
-            data=output_pdf,
+            data=stored_output_pdf,
             file_name="output_edges.pdf",
             mime="application/pdf",
             type="primary",
