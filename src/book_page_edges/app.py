@@ -45,6 +45,8 @@ def _build_gradient_image(
     b = _hex_to_rgb(c2)
     img = Image.new("RGBA", (width, height))
     px = img.load()
+    if px is None:
+        raise RuntimeError("Failed to acquire pixel buffer")
 
     if vertical:
         denom = max(1, height - 1)
