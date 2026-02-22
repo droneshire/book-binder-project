@@ -1,0 +1,7 @@
+[MASTER]
+ignore=.venv
+persistent=no
+
+
+[FORMAT]
+max-line-length=180
