@@ -1,8 +1,14 @@
+"""Typed data models used by analysis and UI layers."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 
 @dataclass
 class PageMetrics:
+    """Per-page dimensions represented in points and raster pixels."""
+
     index: int
     width_pts: float
     height_pts: float
@@ -12,6 +18,8 @@ class PageMetrics:
 
 @dataclass
 class PdfAnalysis:
+    """Summary of PDF geometry properties used by the app."""
+
     page_count: int
     first_trim_w_pts: float
     first_trim_h_pts: float

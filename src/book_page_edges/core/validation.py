@@ -1,14 +1,21 @@
+"""Validation helpers for user-provided edge images."""
+
+from __future__ import annotations
+
 import io
+from typing import Any
 
 from PIL import Image
 
 
 def validate_uploaded_image(
-    uploaded_file,
+    uploaded_file: Any,
     label: str,
     expected_width: int,
     expected_height: int,
 ) -> tuple[list[str], Image.Image]:
+    """Validate image dimensions and embedded DPI metadata."""
+
     warnings: list[str] = []
     raw = Image.open(io.BytesIO(uploaded_file.getvalue()))
     actual_w, actual_h = raw.size
@@ -17,19 +24,19 @@ def validate_uploaded_image(
         pct_w = ((actual_w / expected_width) - 1.0) * 100.0 if expected_width else 0.0
         pct_h = ((actual_h / expected_height) - 1.0) * 100.0 if expected_height else 0.0
         warnings.append(
-            f"{label}: size is {actual_w}x{actual_h}, expected {expected_width}x{expected_height} "
-            f"({pct_w:+.1f}% width, {pct_h:+.1f}% height)."
+            f"{label}: size is {actual_w}x{actual_h}, expected "
+            f"{expected_width}x{expected_height} ({pct_w:+.1f}% width, {pct_h:+.1f}% height)."
         )
 
     dpi_info = raw.info.get("dpi")
-    if isinstance(dpi_info, tuple) and len(dpi_info) >= 1:
+    if isinstance(dpi_info, tuple) and dpi_info:
         try:
-            img_dpi = float(dpi_info[0])
-            if img_dpi < 300:
-                warnings.append(
-                    f"{label}: embedded DPI is {img_dpi:.0f}; 300+ is recommended."
-                )
+            image_dpi = float(dpi_info[0])
         except (TypeError, ValueError):
-            pass
+            image_dpi = 0.0
+        if image_dpi and image_dpi < 300:
+            warnings.append(
+                f"{label}: embedded DPI is {image_dpi:.0f}; 300+ is recommended."
+            )
 
     return warnings, raw.convert("RGBA")

@@ -1,3 +1,7 @@
+"""Static configuration values and presets for the app."""
+
+from __future__ import annotations
+
 DEFAULT_DPI = 300
 DEFAULT_EDGE_WIDTH_PTS = 36.0
 DEFAULT_FORE_OPACITY = 1.0

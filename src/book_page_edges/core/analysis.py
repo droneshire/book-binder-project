@@ -1,3 +1,7 @@
+"""PDF analysis and edge-dimension computation utilities."""
+
+from __future__ import annotations
+
 from typing import Iterable
 
 import fitz
@@ -7,6 +11,8 @@ from book_page_edges.core.models import PageMetrics, PdfAnalysis
 
 
 def collect_page_metrics(doc: fitz.Document, dpi: int) -> list[PageMetrics]:
+    """Collect page dimensions in points and pixels for all pages."""
+
     metrics: list[PageMetrics] = []
     scale = dpi / 72.0
     for idx, page in enumerate(doc):
@@ -24,6 +30,8 @@ def collect_page_metrics(doc: fitz.Document, dpi: int) -> list[PageMetrics]:
 
 
 def analyze_pdf(doc: fitz.Document, dpi: int) -> tuple[PdfAnalysis, list[PageMetrics]]:
+    """Analyze document geometry, bleed presence, and mixed-size status."""
+
     metrics = collect_page_metrics(doc, dpi)
     if not metrics:
         raise ValueError("PDF has no pages")
@@ -34,9 +42,9 @@ def analyze_pdf(doc: fitz.Document, dpi: int) -> tuple[PdfAnalysis, list[PageMet
 
     mixed_trim = False
     first_trim_size = (round(trim.width, 4), round(trim.height, 4))
-    for p in doc:
-        t = p.trimbox
-        if (round(t.width, 4), round(t.height, 4)) != first_trim_size:
+    for page in doc:
+        page_trim = page.trimbox
+        if (round(page_trim.width, 4), round(page_trim.height, 4)) != first_trim_size:
             mixed_trim = True
             break
 
@@ -60,19 +68,16 @@ def expected_edge_dimensions(
     edge_width_pts: float,
     dpi: int,
 ) -> dict[str, int]:
-    metrics = list(metrics)
-    first = metrics[0]
-    strip_px = pts_to_px(edge_width_pts, dpi)
+    """Compute expected edge image dimensions based on first page and page count."""
 
-    fore_w = strip_px
-    fore_h = first.height_px * page_count
-    top_w = first.width_px * page_count
-    top_h = strip_px
+    metric_list = list(metrics)
+    first = metric_list[0]
+    strip_px = pts_to_px(edge_width_pts, dpi)
 
     return {
         "strip_px": strip_px,
-        "fore_w": fore_w,
-        "fore_h": fore_h,
-        "top_w": top_w,
-        "top_h": top_h,
+        "fore_w": strip_px,
+        "fore_h": first.height_px * page_count,
+        "top_w": first.width_px * page_count,
+        "top_h": strip_px,
     }
