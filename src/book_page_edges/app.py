@@ -376,22 +376,12 @@ def _render_sidebar() -> SidebarSettings:
             )
         )
 
-        st.header("🩸 Bleed")
-        add_bleed = st.checkbox("Add Bleed To Output", value=False)
-        bleed_in = float(
-            st.number_input(
-                "Bleed (inches)",
-                min_value=0.0,
-                max_value=0.5,
-                value=float(preset_vals["bleed_in"]),
-                step=0.005,
-                format="%.3f",
-            )
-        )
-        apply_edges_in_bleed_only = st.checkbox(
-            "Apply Edges In Bleed Area Only",
-            value=True,
-        )
+        # Bleed is required for print-ready output and is derived from the
+        # selected printer preset. We always add bleed and constrain edge
+        # artwork to the bleed region so users don't have to make a choice here.
+        bleed_in = float(preset_vals["bleed_in"])
+        add_bleed = True
+        apply_edges_in_bleed_only = True
 
         st.header("📄 Paper")
         paper_type = st.selectbox(
@@ -532,7 +522,9 @@ def _prepare_interior_data(
 
 def _edge_inputs_from_upload(
     dims: dict[str, int],
-    include_top_bottom: bool,
+    use_fore: bool,
+    use_top: bool,
+    use_bottom: bool,
 ) -> tuple[Image.Image | None, Image.Image | None, Image.Image | None, list[str], bool]:
     """Collect edge images from upload widgets."""
 
@@ -542,39 +534,46 @@ def _edge_inputs_from_upload(
     bottom_img = None
 
     col1, col2 = st.columns(2)
-    with col1:
-        fore_upload = st.file_uploader(
-            "🖼️ Fore-edge Image",
-            type=["png"],
-            key="fore_upload",
-        )
+    if use_fore:
+        with col1:
+            fore_upload = st.file_uploader(
+                "🖼️ Fore-edge Decoration Image",
+                type=["png", "jpg", "jpeg"],
+                key="fore_upload",
+            )
+    else:
+        fore_upload = None
+
     with col2:
         top_upload = None
         bottom_upload = None
-        if include_top_bottom:
+        if use_top:
             top_upload = st.file_uploader(
-                "🖼️ Top Edge Image",
-                type=["png"],
+                "🖼️ Top-edge Decoration Image",
+                type=["png", "jpg", "jpeg"],
                 key="top_upload",
             )
+        if use_bottom:
             bottom_upload = st.file_uploader(
-                "🖼️ Bottom Edge Image",
-                type=["png"],
+                "🖼️ Bottom-edge Decoration Image",
+                type=["png", "jpg", "jpeg"],
                 key="bottom_upload",
             )
 
-    ready = fore_upload is not None
-    if fore_upload is not None:
-        cur_warnings, fore_img = validate_uploaded_image(
-            fore_upload,
-            "Fore edge",
-            dims["fore_w"],
-            dims["fore_h"],
-        )
-        warnings.extend(cur_warnings)
+    ready = True
+    if use_fore:
+        ready = fore_upload is not None
+        if fore_upload is not None:
+            cur_warnings, fore_img = validate_uploaded_image(
+                fore_upload,
+                "Fore edge",
+                dims["fore_w"],
+                dims["fore_h"],
+            )
+            warnings.extend(cur_warnings)
 
-    if include_top_bottom:
-        if top_upload is None or bottom_upload is None:
+    if use_top:
+        if top_upload is None:
             ready = False
         else:
             top_warnings, top_img = _validate_top_bottom_image(
@@ -583,6 +582,10 @@ def _edge_inputs_from_upload(
                 dims,
             )
             warnings.extend(top_warnings)
+    if use_bottom:
+        if bottom_upload is None:
+            ready = False
+        else:
             bottom_warnings, bottom_img = _validate_top_bottom_image(
                 bottom_upload,
                 "Bottom edge",
@@ -595,7 +598,9 @@ def _edge_inputs_from_upload(
 
 def _edge_inputs_from_generated(
     dims: dict[str, int],
-    include_top_bottom: bool,
+    use_fore: bool,
+    use_top: bool,
+    use_bottom: bool,
     input_mode: str,
 ) -> tuple[Image.Image | None, Image.Image | None, Image.Image | None, list[str], bool]:
     """Build edge images from generated color/gradient inputs."""
@@ -605,44 +610,59 @@ def _edge_inputs_from_generated(
     if input_mode == "Gradient":
         color_a = st.color_picker("🌈 Gradient Start Color", "#1d4ed8", key="grad_c1")
         color_b = st.color_picker("🌈 Gradient End Color", "#0f766e", key="grad_c2")
-        fore_img = _build_gradient_image(
-            dims["fore_w"],
-            dims["fore_h"],
-            color_a,
-            color_b,
-            vertical=True,
+        fore_img = (
+            _build_gradient_image(
+                dims["fore_w"],
+                dims["fore_h"],
+                color_a,
+                color_b,
+                vertical=True,
+            )
+            if use_fore
+            else None
         )
-        if include_top_bottom:
-            top_img = _build_gradient_image(
+        top_img = (
+            _build_gradient_image(
                 dims["top_w"],
                 dims["top_h"],
                 color_a,
                 color_b,
                 vertical=False,
             )
-            bottom_img = _build_gradient_image(
+            if use_top
+            else None
+        )
+        bottom_img = (
+            _build_gradient_image(
                 dims["top_w"],
                 dims["top_h"],
                 color_a,
                 color_b,
                 vertical=False,
             )
-        else:
-            top_img = None
-            bottom_img = None
+            if use_bottom
+            else None
+        )
 
-        return fore_img, top_img, bottom_img, warnings, True
+        # Ready as long as at least one edge is selected.
+        return fore_img, top_img, bottom_img, warnings, any(
+            [use_fore, use_top, use_bottom]
+        )
 
     color = st.color_picker("🎯 Edge Color", "#0f172a", key="solid_c")
-    fore_img = _build_solid_image(dims["fore_w"], dims["fore_h"], color)
-    if include_top_bottom:
-        top_img = _build_solid_image(dims["top_w"], dims["top_h"], color)
-        bottom_img = _build_solid_image(dims["top_w"], dims["top_h"], color)
-    else:
-        top_img = None
-        bottom_img = None
+    fore_img = (
+        _build_solid_image(dims["fore_w"], dims["fore_h"], color) if use_fore else None
+    )
+    top_img = (
+        _build_solid_image(dims["top_w"], dims["top_h"], color) if use_top else None
+    )
+    bottom_img = (
+        _build_solid_image(dims["top_w"], dims["top_h"], color) if use_bottom else None
+    )
 
-    return fore_img, top_img, bottom_img, warnings, True
+    return fore_img, top_img, bottom_img, warnings, any(
+        [use_fore, use_top, use_bottom]
+    )
 
 
 def _render_edge_configuration(dims: dict[str, int]) -> EdgeInputs:
@@ -650,14 +670,20 @@ def _render_edge_configuration(dims: dict[str, int]) -> EdgeInputs:
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
     st.subheader("🧩 Edge Configuration")
-    edge_config = st.radio(
-        "Select edge layout",
-        options=["Fore-edge Only", "All Three Edges"],
-        horizontal=True,
+    selected_edges = st.multiselect(
+        "Select edges to decorate",
+        options=["Fore", "Top", "Bottom"],
+        default=["Fore"],
     )
+    use_fore = "Fore" in selected_edges
+    use_top = "Top" in selected_edges
+    use_bottom = "Bottom" in selected_edges
+    if not selected_edges:
+        st.info("Select at least one edge to decorate.")
 
     side = st.selectbox("↔️ Fore-edge Side", options=["right", "left", "both"], index=0)
-    mirror_even = st.checkbox("🪞 Mirror Even Pages", value=False)
+    # Page parity handling is automatic; we keep a fixed side selection here.
+    mirror_even = False
 
     input_mode = st.radio(
         "Decoration source",
@@ -667,18 +693,27 @@ def _render_edge_configuration(dims: dict[str, int]) -> EdgeInputs:
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
     st.subheader("🎨 Edge Input")
 
-    include_top_bottom = edge_config == "All Three Edges"
     if input_mode == "Upload Images":
         fore_img, top_img, bottom_img, warnings, ready = _edge_inputs_from_upload(
             dims,
-            include_top_bottom,
+            use_fore=use_fore,
+            use_top=use_top,
+            use_bottom=use_bottom,
         )
     else:
         fore_img, top_img, bottom_img, warnings, ready = _edge_inputs_from_generated(
             dims,
-            include_top_bottom,
-            input_mode,
+            use_fore=use_fore,
+            use_top=use_top,
+            use_bottom=use_bottom,
+            input_mode=input_mode,
         )
+
+    # Human-readable description of which edges were configured.
+    if selected_edges:
+        edge_config = ", ".join(selected_edges)
+    else:
+        edge_config = "none"
 
     return EdgeInputs(
         edge_config=edge_config,
