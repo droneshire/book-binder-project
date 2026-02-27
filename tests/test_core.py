@@ -36,13 +36,40 @@ def test_slice_horizontal_covers_expected_region() -> None:
     assert sl9.size == (100, 10)
 
 
-def test_effective_side_with_even_mirroring() -> None:
-    assert effective_side("right", mirror_even=True,
-                          page_idx_zero_based=0) == "right"
-    assert effective_side("right", mirror_even=True,
-                          page_idx_zero_based=1) == "left"
-    assert effective_side("left", mirror_even=True,
-                          page_idx_zero_based=1) == "right"
+def test_effective_side_with_even_mirroring_ltr() -> None:
+    assert effective_side(
+        "right",
+        mirror_even=True,
+        binding="ltr",
+        page_idx_zero_based=0,
+    ) == "right"
+    assert effective_side(
+        "right",
+        mirror_even=True,
+        binding="ltr",
+        page_idx_zero_based=1,
+    ) == "left"
+    assert effective_side(
+        "left",
+        mirror_even=True,
+        binding="ltr",
+        page_idx_zero_based=1,
+    ) == "left"
+
+
+def test_effective_side_with_even_mirroring_rtl() -> None:
+    assert effective_side(
+        "right",
+        mirror_even=True,
+        binding="rtl",
+        page_idx_zero_based=0,
+    ) == "left"
+    assert effective_side(
+        "right",
+        mirror_even=True,
+        binding="rtl",
+        page_idx_zero_based=1,
+    ) == "right"
 
 
 def test_expected_dimensions() -> None:

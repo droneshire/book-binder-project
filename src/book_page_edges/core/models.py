@@ -1,4 +1,5 @@
 """Typed data models used by analysis and UI layers."""
+# pylint: disable=duplicate-code
 
 from __future__ import annotations
 
@@ -27,3 +28,25 @@ class PdfAnalysis:
     first_media_h_pts: float
     has_bleed_on_first_page: bool
     mixed_trim_sizes: bool
+
+
+@dataclass
+class EdgeConfig:
+    """Per-edge configuration matching the PRD schema."""
+
+    enabled: bool
+    zone_in: float
+
+
+@dataclass
+class MultiEdgeConfig:  # pylint: disable=too-many-instance-attributes
+    """High-level configuration model for multi-edge placement."""
+
+    fore: EdgeConfig
+    top: EdgeConfig
+    bottom: EdgeConfig
+    bleed_in: float
+    safe_margin_in: float
+    trim_width_in: float
+    trim_height_in: float
+    binding: str

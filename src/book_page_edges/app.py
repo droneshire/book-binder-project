@@ -1,4 +1,5 @@
 """Streamlit UI for generating print-ready and edge-only book edge outputs."""
+# pylint: disable=too-many-lines,duplicate-code
 
 from __future__ import annotations
 
@@ -81,13 +82,14 @@ class EdgeInputs:
     edge_config: str
     side: str
     mirror_even: bool
+    binding: str
     images: EdgeImageSet
     warnings: list[str]
     ready: bool
 
 
 @dataclass(frozen=True)
-class EdgeBundleMeta:
+class EdgeBundleMeta:  # pylint: disable=too-many-instance-attributes
     """Metadata attached to edge-only bundles."""
 
     dims: dict[str, int]
@@ -95,6 +97,11 @@ class EdgeBundleMeta:
     edge_width_pts: float
     page_count: int
     edge_config: str
+    bleed_in: float
+    safe_margin_in: float
+    trim_width_in: float
+    trim_height_in: float
+    binding: str
 
 
 def _hex_to_rgb(color: str) -> tuple[int, int, int]:
@@ -204,6 +211,13 @@ def _build_edge_bundle_zip(
         "dpi": meta.dpi,
         "edge_width_pts": meta.edge_width_pts,
         "edge_config": meta.edge_config,
+        "trim_in": {
+            "width": meta.trim_width_in,
+            "height": meta.trim_height_in,
+        },
+        "bleed_in": meta.bleed_in,
+        "safe_margin_in": meta.safe_margin_in,
+        "binding": meta.binding,
         "dimensions_px": {
             "fore": {
                 "width": meta.dims["fore_w"],
@@ -520,7 +534,7 @@ def _prepare_interior_data(
     )
 
 
-def _edge_inputs_from_upload(
+def _edge_inputs_from_upload(  # pylint: disable=too-many-locals
     dims: dict[str, int],
     use_fore: bool,
     use_top: bool,
@@ -645,8 +659,12 @@ def _edge_inputs_from_generated(
         )
 
         # Ready as long as at least one edge is selected.
-        return fore_img, top_img, bottom_img, warnings, any(
-            [use_fore, use_top, use_bottom]
+        return (
+            fore_img,
+            top_img,
+            bottom_img,
+            warnings,
+            any([use_fore, use_top, use_bottom]),
         )
 
     color = st.color_picker("🎯 Edge Color", "#0f172a", key="solid_c")
@@ -660,9 +678,7 @@ def _edge_inputs_from_generated(
         _build_solid_image(dims["top_w"], dims["top_h"], color) if use_bottom else None
     )
 
-    return fore_img, top_img, bottom_img, warnings, any(
-        [use_fore, use_top, use_bottom]
-    )
+    return fore_img, top_img, bottom_img, warnings, any([use_fore, use_top, use_bottom])
 
 
 def _render_edge_configuration(dims: dict[str, int]) -> EdgeInputs:
@@ -681,9 +697,19 @@ def _render_edge_configuration(dims: dict[str, int]) -> EdgeInputs:
     if not selected_edges:
         st.info("Select at least one edge to decorate.")
 
-    side = st.selectbox("↔️ Fore-edge Side", options=["right", "left", "both"], index=0)
-    # Page parity handling is automatic; we keep a fixed side selection here.
-    mirror_even = False
+    binding = st.selectbox(
+        "📖 Binding Direction",
+        options=["ltr", "rtl"],
+        index=0,
+        format_func=lambda v: (
+            "Left-to-right (binding on left)"
+            if v == "ltr"
+            else "Right-to-left (binding on right)"
+        ),
+    )
+    side = "outer"
+    # Enable duplex-aware placement so the fore-edge always lands on the outer margin.
+    mirror_even = True
 
     input_mode = st.radio(
         "Decoration source",
@@ -719,6 +745,7 @@ def _render_edge_configuration(dims: dict[str, int]) -> EdgeInputs:
         edge_config=edge_config,
         side=side,
         mirror_even=mirror_even,
+        binding=binding,
         images=EdgeImageSet(fore=fore_img, top=top_img, bottom=bottom_img),
         warnings=warnings,
         ready=ready,
@@ -749,6 +776,16 @@ def _validate_preconditions(
         st.warning("Complete required edge inputs to generate output.")
         return False
 
+    # Duplex alignment visibility (PRD V4): describe how side placement will behave.
+    binding_label = (
+        "left-to-right (outer edge alternates right/left on odd/even pages)"
+        if edge_inputs.binding == "ltr"
+        else "right-to-left (outer edge alternates left/right on odd/even pages)"
+    )
+    st.caption(
+        f"Binding direction: {binding_label}. Fore-edge artwork is applied on the outer edge."
+    )
+
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
     return True
 
@@ -778,6 +815,18 @@ def _render_edge_file_only_button(
                 edge_width_pts=settings.output.edge_width_pts,
                 page_count=interior.analysis.page_count,
                 edge_config=edge_inputs.edge_config,
+                bleed_in=settings.bleed.bleed_in,
+                safe_margin_in=next(
+                    (
+                        preset["safe_area_in"]
+                        for name, preset in PRINTER_PRESETS.items()
+                        if name == settings.preset
+                    ),
+                    0.0,
+                ),
+                trim_width_in=interior.analysis.first_trim_w_pts / 72.0,
+                trim_height_in=interior.analysis.first_trim_h_pts / 72.0,
+                binding=edge_inputs.binding,
             ),
         )
     except (RuntimeError, ValueError, OSError) as exc:
@@ -892,9 +941,9 @@ def _render_full_service_output(
         )
 
     st.download_button(
-        label="⬇️ Download output_edges.pdf",
+        label="⬇️ Download interior_multi_edge.pdf",
         data=output_pdf,
-        file_name="output_edges.pdf",
+        file_name="interior_multi_edge.pdf",
         mime="application/pdf",
         type="primary",
     )
@@ -932,6 +981,7 @@ def _run_full_service(
                 add_bleed=settings.bleed.add_bleed,
                 bleed_pts=interior.bleed_pts,
                 apply_edges_in_bleed_only=settings.bleed.apply_edges_in_bleed_only,
+                binding=edge_inputs.binding,
             ),
         )
 

@@ -1,4 +1,5 @@
 """Streamlit entrypoint for local and cloud deployment."""
+# pylint: disable=duplicate-code
 
 from __future__ import annotations
 

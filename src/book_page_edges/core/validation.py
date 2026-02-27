@@ -24,8 +24,10 @@ def validate_uploaded_image(
         pct_w = ((actual_w / expected_width) - 1.0) * 100.0 if expected_width else 0.0
         pct_h = ((actual_h / expected_height) - 1.0) * 100.0 if expected_height else 0.0
         warnings.append(
-            f"{label}: size is {actual_w}x{actual_h}, expected "
-            f"{expected_width}x{expected_height} ({pct_w:+.1f}% width, {pct_h:+.1f}% height)."
+            f"{label}: size is {actual_w}x{actual_h}. For a 1:1, non-repeating mapping "
+            f"the ideal size would be ~{expected_width}x{expected_height} "
+            f"({pct_w:+.1f}% width, {pct_h:+.1f}% height). "
+            "Your image will still be auto-scaled and sliced; this is an advisory note only."
         )
 
     dpi_info = raw.info.get("dpi")

@@ -80,15 +80,23 @@ def to_rgba(uploaded_file: Any) -> Image.Image:
     return Image.open(io.BytesIO(uploaded_file.getvalue())).convert("RGBA")
 
 
-def effective_side(base_side: str, mirror_even: bool, page_idx_zero_based: int) -> str:
-    """Return effective fore-edge side, optionally mirroring even pages."""
+def effective_side(
+    base_side: str, mirror_even: bool, binding: str, page_idx_zero_based: int
+) -> str:
+    """Return effective fore-edge side, honoring duplex and binding direction."""
 
     if base_side == "both":
         return "both"
+
+    # If mirroring is disabled, respect the explicit side selection.
     if not mirror_even:
         return base_side
 
+    # Duplex-aware mapping: ensure artwork lands on the outer edge given binding.
     is_even_page_number = ((page_idx_zero_based + 1) % 2) == 0
-    if not is_even_page_number:
-        return base_side
-    return "left" if base_side == "right" else "right"
+    if binding.lower() == "rtl":
+        # Binding on the right; outer edge is left on odd pages, right on even.
+        return "left" if not is_even_page_number else "right"
+
+    # Default / LTR: binding on the left; outer edge is right on odd, left on even.
+    return "right" if not is_even_page_number else "left"

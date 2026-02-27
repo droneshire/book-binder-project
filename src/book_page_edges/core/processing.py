@@ -28,6 +28,7 @@ class PlacementOptions:
     add_bleed: bool
     bleed_pts: float
     apply_edges_in_bleed_only: bool
+    binding: str
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,7 @@ def _paste_fore(
     side_now = effective_side(
         state.options.placement.side,
         state.options.placement.mirror_even,
+        state.options.placement.binding,
         page_idx,
     )
 
@@ -228,8 +230,6 @@ def _compose_page(
         request.bleed_px,
     )
 
-    if request.edge_images.fore is not None:
-        _paste_fore(canvas, geometry, request.page_idx, request.edge_images.fore, state)
     context = RenderContext(page_idx=request.page_idx, canvas=canvas, geometry=geometry)
     if request.edge_images.top is not None:
         _paste_horizontal(
@@ -245,6 +245,8 @@ def _compose_page(
             state,
             is_top=False,
         )
+    if request.edge_images.fore is not None:
+        _paste_fore(canvas, geometry, request.page_idx, request.edge_images.fore, state)
 
     jpg_bytes = _encode_canvas_to_jpeg(canvas, state.options.jpeg_quality)
     width_pts, height_pts = _page_dimensions(request.page, state.options)
