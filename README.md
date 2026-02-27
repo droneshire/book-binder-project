@@ -67,14 +67,36 @@ Download bundle
 
 For page `i` in a document of `N` pages:
 
-- Fore-edge slice (vertical):
+- Fore-edge (side) slice (vertical):
   - `y0 = round(i / N * H)`
   - `y1 = round((i + 1) / N * H)`
-- Top/Bottom slice (horizontal):
+- Top/Bottom slices (horizontal):
   - `x0 = round(i / N * W)`
   - `x1 = round((i + 1) / N * W)`
 
 Where `H` and `W` are source edge image dimensions. Bounds are clamped and enforced non-empty.
+
+Duplex-aware placement rules:
+
+- Fore-edge artwork is always placed on the **outer** edge, respecting binding:
+  - LTR binding: outer edge is right on odd pages, left on even pages.
+  - RTL binding: outer edge is left on odd pages, right on even pages.
+- Top and bottom edges are applied consistently to the top and bottom margins plus bleed.
+
+Placement order (to avoid corner artifacts):
+
+1. Top
+2. Bottom
+3. Side (fore-edge)
+
+High-level functional requirements (from the original PRD):
+
+- **F1**: Accept independent edge artwork per edge (fore/top/bottom).
+- **F2**: Apply slices into the correct margin zones.
+- **F3**: Extend slices into the configured bleed region.
+- **F4**: Maintain a safe text zone inside printer-safe margins.
+- **F5**: Be duplex-aware so outer edges are decorated correctly.
+- **F6**: Allow enabling/disabling each edge independently.
 
 ## Project Structure
 
@@ -166,7 +188,7 @@ This creates `.venv`, installs dependencies, and launches Streamlit.
 6. Adjust side, mirror-even, DPI, opacity, JPEG quality, and bleed options.
 7. Click `Generate Styled Edge PDF`.
 8. Review preview shown below action.
-9. Download `output_edges.pdf`.
+9. Download `interior_multi_edge.pdf`.
 
 ### Edge File Only
 
@@ -215,6 +237,11 @@ Then publishes a GitHub Release with binary assets and direct download links.
 Notes:
 - `requirements.txt` is included.
 - `streamlit_app.py` bootstraps `src/` on `sys.path`, fixing `ModuleNotFoundError: book_page_edges` in remote deploys.
+
+### Data Handling on Streamlit
+
+- Uploaded PDFs and edge images are held **only in memory** for the active session.
+- After a full-service PDF or edge bundle is successfully generated, the app clears upload-related Streamlit state so previously uploaded files are no longer retained by the UI logic.
 
 ## Testing
 
