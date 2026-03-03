@@ -25,7 +25,6 @@ from book_page_edges.core.config import (
 )
 from book_page_edges.core.image_ops import inches_to_pts
 from book_page_edges.core.models import PageMetrics, PdfAnalysis
-from book_page_edges.core.pdf_factory import create_blank_pdf
 from book_page_edges.core.processing import (
     EdgeImageSet,
     PlacementOptions,
@@ -390,11 +389,16 @@ def _render_sidebar() -> SidebarSettings:
             )
         )
 
-        # Bleed is required for print-ready output and is derived from the
-        # selected printer preset. We always add bleed and constrain edge
-        # artwork to the bleed region so users don't have to make a choice here.
+        st.header("🔲 Bleed")
+        add_bleed = st.checkbox(
+            "Add bleed to manuscript",
+            value=True,
+            help=(
+                "Expand each page by the bleed amount to produce a print-ready PDF. "
+                "Enable this when your manuscript does not already include bleed."
+            ),
+        )
         bleed_in = float(preset_vals["bleed_in"])
-        add_bleed = True
         apply_edges_in_bleed_only = True
 
         st.header("📄 Paper")
@@ -429,70 +433,15 @@ def _render_interior_source() -> bytes | None:
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
     st.subheader("📚 Interior Source")
-    interior_source = st.radio(
-        "Choose interior input",
-        options=["Upload Interior PDF", "Generate Blank Interior PDF"],
-        horizontal=True,
+    pdf_upload = st.file_uploader(
+        "📎 Upload your manuscript PDF",
+        type=["pdf"],
+        key="pdf_upload",
     )
-
-    if interior_source == "Upload Interior PDF":
-        pdf_upload = st.file_uploader(
-            "📎 Your manuscript PDF with bleed",
-            type=["pdf"],
-            key="pdf_upload",
-        )
-        if pdf_upload is None:
-            st.info("Upload a print-ready interior PDF to continue.")
-            return None
-        return pdf_upload.getvalue()
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        trim_width_in = float(
-            st.number_input(
-                "Trim Width (in)",
-                min_value=1.0,
-                max_value=12.0,
-                value=5.0,
-                step=0.01,
-            )
-        )
-    with c2:
-        trim_height_in = float(
-            st.number_input(
-                "Trim Height (in)",
-                min_value=1.0,
-                max_value=14.0,
-                value=8.0,
-                step=0.01,
-            )
-        )
-    with c3:
-        blank_page_count = int(
-            st.number_input(
-                "Page Count",
-                min_value=1,
-                max_value=2000,
-                value=300,
-                step=1,
-            )
-        )
-
-    try:
-        pdf_bytes = create_blank_pdf(
-            page_count=blank_page_count,
-            trim_width_in=trim_width_in,
-            trim_height_in=trim_height_in,
-        )
-    except (ValueError, RuntimeError) as exc:
-        st.error(f"Failed to generate blank interior PDF: {exc}")
+    if pdf_upload is None:
+        st.info("Upload a print-ready interior PDF to continue.")
         return None
-
-    st.caption(
-        "🧱 Using generated blank interior PDF. "
-        "Output will be edge-sliced artwork on blank pages."
-    )
-    return pdf_bytes
+    return pdf_upload.getvalue()
 
 
 def _prepare_interior_data(
