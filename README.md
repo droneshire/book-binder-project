@@ -1,14 +1,10 @@
 # Book Page Edge Design Applicator
 
-Streamlit app for generating forced/printed page-edge effects for books.
-
-It supports two download types:
-- Full Service: creates a print-ready edged interior PDF.
-- Edge File Only: creates edge asset files (`fore/top/bottom`) + `edge_spec.json` in a zip.
+Streamlit app for generating forced/printed page-edge effects for books. It produces a print-ready edged interior PDF from your uploaded manuscript and edge artwork.
 
 ## Final Capabilities
 
-- Upload interior PDF or generate a blank interior (trim size + page count).
+- Upload interior PDF; add bleed to manuscript is on by default (KDP: 0.125 in; 6.125 × 9.25 in page size for 6×9 trim).
 - Fore-edge only or all three edges (fore/top/bottom).
 - Edge art source:
   - upload PNGs,
@@ -17,17 +13,12 @@ It supports two download types:
 - Slice algorithm maps one image segment per page, with safe clamped bounds.
 - Side controls: `right`, `left`, `both`, plus even-page mirroring.
 - Optional bleed expansion and bleed-only placement.
-- Output preview shown before download (full-service mode).
-- Edge-file bundle export with machine-readable metadata.
+- Output preview shown before download.
 
 ## Process Flow
 
-### Full Service (Print-Ready PDF)
-
 ```text
-Download Type: Full Service
-    |
-Interior Source (Upload PDF or Generate Blank)
+Interior Source (Upload PDF; add bleed on by default)
     |
 PDF Analysis + Required Edge Dimensions
     |
@@ -38,29 +29,9 @@ Decoration Source (Upload / Gradient / Solid)
 Per-page render loop:
   rasterize page -> slice edge art -> resize -> apply opacity -> place strips
     |
-Generate output_edges.pdf
+Generate print-ready PDF
     |
-Show preview (page 1) + download button
-```
-
-### Edge File Only
-
-```text
-Download Type: Edge File Only
-    |
-Interior Source (for sizing context)
-    |
-Dimension calculation + orientation rules
-    |
-Prepare edge images (upload/generated)
-    |
-Build edge_files.zip containing:
-  fore_edge.png
-  top_edge.png (optional)
-  bottom_edge.png (optional)
-  edge_spec.json
-    |
-Download bundle
+Show preview + download button
 ```
 
 ## Core Algorithm
@@ -128,9 +99,9 @@ High-level functional requirements (from the original PRD):
 ## Technical Implementation
 
 - `src/book_page_edges/app.py`
-  - Streamlit UI and branching for both download types.
+  - Streamlit UI for the print-ready PDF flow.
   - Builds gradient/solid edge images.
-  - Shows post-generation preview in full-service mode.
+  - Shows post-generation preview.
 
 - `src/book_page_edges/core/processing.py`
   - Per-page rendering/compositing pipeline.
@@ -143,7 +114,7 @@ High-level functional requirements (from the original PRD):
   - Uploaded image validation and warnings.
 
 - `src/book_page_edges/core/pdf_factory.py`
-  - Blank PDF creation from trim dimensions and page count.
+  - Add bleed to manuscript (KDP-style expansion); blank PDF helper for tests.
 
 - `streamlit_app.py`
   - App entrypoint.
@@ -176,33 +147,13 @@ This creates `.venv`, installs dependencies, and launches Streamlit.
 
 ## Usage Guide
 
-### Full Service
-
-1. Select `Download Type` -> `Full Service - Print-Ready Book PDF`.
-2. Choose interior source:
-   - upload interior PDF, or
-   - generate blank interior from trim width/height + page count.
-3. Review Book Specifications and Required Edge Image Dimensions.
-4. Select edge layout (`Fore-edge Only` or `All Three Edges`).
-5. Choose decoration source (`Upload Images`, `Gradient`, `Solid Color`).
-6. Adjust side, mirror-even, DPI, opacity, JPEG quality, and bleed options.
-7. Click `Generate Styled Edge PDF`.
-8. Review preview shown below action.
-9. Download `interior_multi_edge.pdf`.
-
-### Edge File Only
-
-1. Select `Download Type` -> `Edge File Only`.
-2. Provide interior source (for sizing context).
-3. Configure layout and decoration source.
-4. Click `Generate Edge File Bundle`.
-5. Download `edge_files.zip`.
-
-Bundle contents:
-- `fore_edge.png`
-- `top_edge.png` (if selected)
-- `bottom_edge.png` (if selected)
-- `edge_spec.json`
+1. Upload an interior PDF (add bleed to manuscript is on by default; KDP 6.125 × 9.25 in for 6×9 trim).
+2. Review Book Specifications and Required Edge Image Dimensions.
+3. Select edge layout (`Fore-edge Only` or `All Three Edges`).
+4. Choose decoration source (`Upload Images`, `Gradient`, `Solid Color`).
+5. Adjust side, mirror-even, DPI, edge width, opacity, and JPEG quality as needed.
+6. Click `Generate Styled Edge PDF`.
+7. Review preview and download `interior_multi_edge.pdf`.
 
 ## CI/CD and Releases
 
@@ -241,7 +192,7 @@ Notes:
 ### Data Handling on Streamlit
 
 - Uploaded PDFs and edge images are held **only in memory** for the active session.
-- After a full-service PDF or edge bundle is successfully generated, the app clears upload-related Streamlit state so previously uploaded files are no longer retained by the UI logic.
+- After a PDF is successfully generated, the app clears upload-related Streamlit state so previously uploaded files are no longer retained by the UI logic.
 
 ## Testing
 
@@ -260,7 +211,7 @@ Tests currently cover:
 
 ## Known Limitations
 
-- Full-service output is rasterized (text is not selectable/searchable).
+- Output is rasterized (text is not selectable/searchable).
 - Very large books and/or high DPI increase runtime and output size.
 - Final printed appearance depends on printer trim tolerance and paper.
 

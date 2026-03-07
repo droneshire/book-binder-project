@@ -1,4 +1,5 @@
 """Typed data models used by analysis and UI layers."""
+
 # pylint: disable=duplicate-code
 
 from __future__ import annotations

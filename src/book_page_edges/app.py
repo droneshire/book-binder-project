@@ -1,12 +1,11 @@
 """Streamlit UI for generating print-ready and edge-only book edge outputs."""
+
 # pylint: disable=too-many-lines,duplicate-code
 
 from __future__ import annotations
 
 import base64
 import io
-import json
-import zipfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,12 +19,14 @@ from book_page_edges.core.config import (
     DEFAULT_EDGE_WIDTH_PTS,
     DEFAULT_FORE_OPACITY,
     DEFAULT_JPEG_QUALITY,
+    KDP_PAGE_WITH_BLEED_HEIGHT_IN,
+    KDP_PAGE_WITH_BLEED_WIDTH_IN,
     PAPER_TYPES_INCH_PER_PAGE,
     PRINTER_PRESETS,
 )
 from book_page_edges.core.image_ops import inches_to_pts
 from book_page_edges.core.models import PageMetrics, PdfAnalysis
-from book_page_edges.core.pdf_factory import create_blank_pdf
+from book_page_edges.core.pdf_factory import add_bleed_to_manuscript
 from book_page_edges.core.processing import (
     EdgeImageSet,
     PlacementOptions,
@@ -86,22 +87,6 @@ class EdgeInputs:
     images: EdgeImageSet
     warnings: list[str]
     ready: bool
-
-
-@dataclass(frozen=True)
-class EdgeBundleMeta:  # pylint: disable=too-many-instance-attributes
-    """Metadata attached to edge-only bundles."""
-
-    dims: dict[str, int]
-    dpi: int
-    edge_width_pts: float
-    page_count: int
-    edge_config: str
-    bleed_in: float
-    safe_margin_in: float
-    trim_width_in: float
-    trim_height_in: float
-    binding: str
 
 
 def _hex_to_rgb(color: str) -> tuple[int, int, int]:
@@ -195,59 +180,6 @@ def _png_bytes(img: Image.Image) -> bytes:
 
     out = io.BytesIO()
     img.save(out, format="PNG")
-    return out.getvalue()
-
-
-def _build_edge_bundle_zip(
-    fore_img: Image.Image,
-    top_img: Image.Image | None,
-    bottom_img: Image.Image | None,
-    meta: EdgeBundleMeta,
-) -> bytes:
-    """Build a zip file for edge-only delivery."""
-
-    spec = {
-        "page_count": meta.page_count,
-        "dpi": meta.dpi,
-        "edge_width_pts": meta.edge_width_pts,
-        "edge_config": meta.edge_config,
-        "trim_in": {
-            "width": meta.trim_width_in,
-            "height": meta.trim_height_in,
-        },
-        "bleed_in": meta.bleed_in,
-        "safe_margin_in": meta.safe_margin_in,
-        "binding": meta.binding,
-        "dimensions_px": {
-            "fore": {
-                "width": meta.dims["fore_w"],
-                "height": meta.dims["fore_h"],
-            },
-            "top": {
-                "width": meta.dims["top_w"],
-                "height": meta.dims["top_h"],
-            },
-            "bottom": {
-                "width": meta.dims["top_w"],
-                "height": meta.dims["top_h"],
-            },
-        },
-        "orientation": {
-            "fore": "page 1 at top",
-            "top": "page 1 at left",
-            "bottom": "page 1 at left",
-        },
-    }
-
-    out = io.BytesIO()
-    with zipfile.ZipFile(out, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("fore_edge.png", _png_bytes(fore_img))
-        if top_img is not None:
-            archive.writestr("top_edge.png", _png_bytes(top_img))
-        if bottom_img is not None:
-            archive.writestr("bottom_edge.png", _png_bytes(bottom_img))
-        archive.writestr("edge_spec.json", json.dumps(spec, indent=2))
-
     return out.getvalue()
 
 
@@ -369,6 +301,9 @@ def _render_sidebar() -> SidebarSettings:
                 max_value=200.0,
                 value=DEFAULT_EDGE_WIDTH_PTS,
                 step=1.0,
+                help="Width of the decorative strip (fore/top/bottom edges). "
+                "For print-ready output this is limited to the preset bleed so "
+                " edge art stays in the trim-safe zone (e.g. 9 pts = 0.125 in for KDP).",
             )
         )
         fore_opacity = float(
@@ -424,74 +359,44 @@ def _render_sidebar() -> SidebarSettings:
     )
 
 
-def _render_interior_source() -> bytes | None:
+def _render_interior_source(settings: SidebarSettings) -> bytes | None:
     """Render interior source controls and return resolved PDF bytes."""
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
     st.subheader("📚 Interior Source")
-    interior_source = st.radio(
-        "Choose interior input",
-        options=["Upload Interior PDF", "Generate Blank Interior PDF"],
-        horizontal=True,
+    pdf_upload = st.file_uploader(
+        "📎 Your manuscript PDF",
+        type=["pdf"],
+        key="pdf_upload",
     )
-
-    if interior_source == "Upload Interior PDF":
-        pdf_upload = st.file_uploader(
-            "📎 Your manuscript PDF with bleed",
-            type=["pdf"],
-            key="pdf_upload",
-        )
-        if pdf_upload is None:
-            st.info("Upload a print-ready interior PDF to continue.")
-            return None
-        return pdf_upload.getvalue()
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        trim_width_in = float(
-            st.number_input(
-                "Trim Width (in)",
-                min_value=1.0,
-                max_value=12.0,
-                value=5.0,
-                step=0.01,
-            )
-        )
-    with c2:
-        trim_height_in = float(
-            st.number_input(
-                "Trim Height (in)",
-                min_value=1.0,
-                max_value=14.0,
-                value=8.0,
-                step=0.01,
-            )
-        )
-    with c3:
-        blank_page_count = int(
-            st.number_input(
-                "Page Count",
-                min_value=1,
-                max_value=2000,
-                value=300,
-                step=1,
-            )
-        )
-
-    try:
-        pdf_bytes = create_blank_pdf(
-            page_count=blank_page_count,
-            trim_width_in=trim_width_in,
-            trim_height_in=trim_height_in,
-        )
-    except (ValueError, RuntimeError) as exc:
-        st.error(f"Failed to generate blank interior PDF: {exc}")
+    if pdf_upload is None:
+        st.info("Upload an interior PDF to continue.")
         return None
 
-    st.caption(
-        "🧱 Using generated blank interior PDF. "
-        "Output will be edge-sliced artwork on blank pages."
+    if settings.preset == "kdp":
+        st.caption(
+            f"For 6×9 trim with bleed, manuscript page size should be "
+            f"**{KDP_PAGE_WITH_BLEED_WIDTH_IN} × {KDP_PAGE_WITH_BLEED_HEIGHT_IN} in**."
+        )
+
+    add_bleed = st.checkbox(
+        "Automatically add bleed to manuscript",
+        value=True,
+        help="Expand each page by the preset bleed (0.125 in) so content can reach the edge after trim. Use for manuscripts that don't already have bleed.",
     )
+    pdf_bytes = pdf_upload.getvalue()
+
+    if add_bleed:
+        try:
+            pdf_bytes = add_bleed_to_manuscript(
+                pdf_bytes,
+                bleed_in=settings.bleed.bleed_in,
+            )
+        except (ValueError, RuntimeError) as exc:
+            st.error(f"Failed to add bleed to manuscript: {exc}")
+            return None
+        st.caption("Bleed has been added to your manuscript per KDP specs (0.125 in).")
+
     return pdf_bytes
 
 
@@ -768,8 +673,11 @@ def _validate_preconditions(
 
     if settings.bleed.add_bleed and settings.bleed.apply_edges_in_bleed_only:
         if settings.output.edge_width_pts > interior.bleed_pts:
+            bleed_in = interior.bleed_pts / 72.0
             st.warning(
-                "Edge width is larger than bleed and will be clamped to bleed width."
+                f"Edge width is larger than the preset bleed ({bleed_in:.3f} in). "
+                "The decorative strip will be limited to the bleed width "
+                "so it stays in the trim-safe zone and reaches the cut edge correctly."
             )
 
     if not edge_inputs.ready:
@@ -788,60 +696,6 @@ def _validate_preconditions(
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
     return True
-
-
-def _render_edge_file_only_button(
-    interior: InteriorData,
-    edge_inputs: EdgeInputs,
-    settings: SidebarSettings,
-) -> None:
-    """Render and execute edge-file-only generation flow."""
-
-    if not st.button("Generate Edge File Bundle", type="primary"):
-        return
-
-    if edge_inputs.images.fore is None:
-        st.error("Fore-edge image is required.")
-        return
-
-    try:
-        bundle = _build_edge_bundle_zip(
-            fore_img=edge_inputs.images.fore,
-            top_img=edge_inputs.images.top,
-            bottom_img=edge_inputs.images.bottom,
-            meta=EdgeBundleMeta(
-                dims=interior.dims,
-                dpi=settings.output.dpi,
-                edge_width_pts=settings.output.edge_width_pts,
-                page_count=interior.analysis.page_count,
-                edge_config=edge_inputs.edge_config,
-                bleed_in=settings.bleed.bleed_in,
-                safe_margin_in=next(
-                    (
-                        preset["safe_area_in"]
-                        for name, preset in PRINTER_PRESETS.items()
-                        if name == settings.preset
-                    ),
-                    0.0,
-                ),
-                trim_width_in=interior.analysis.first_trim_w_pts / 72.0,
-                trim_height_in=interior.analysis.first_trim_h_pts / 72.0,
-                binding=edge_inputs.binding,
-            ),
-        )
-    except (RuntimeError, ValueError, OSError) as exc:
-        st.error(f"Failed to build edge bundle: {exc}")
-        return
-
-    size_mb = len(bundle) / (1024 * 1024)
-    st.success(f"✅ Edge bundle generated. File size: {size_mb:.2f} MB")
-    st.download_button(
-        label="⬇️ Download edge_files.zip",
-        data=bundle,
-        file_name="edge_files.zip",
-        mime="application/zip",
-        type="primary",
-    )
 
 
 def _render_preview_html(preview_imgs: list[Image.Image], start_page: int) -> str:
@@ -1012,17 +866,9 @@ def main() -> None:
 
     st.set_page_config(page_title="Book Page Edge Applicator", layout="wide")
     st.title("✨ Create Your Styled Edges PDF")
-    st.subheader("📦 Download Type")
-    delivery = st.radio(
-        "Download type",
-        options=["Full Service - Print-Ready Book PDF", "Edge File Only"],
-        horizontal=True,
-    )
-    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-    st.divider()
 
     settings = _render_sidebar()
-    pdf_bytes = _render_interior_source()
+    pdf_bytes = _render_interior_source(settings)
     if pdf_bytes is None:
         return
 
@@ -1032,10 +878,6 @@ def main() -> None:
 
     edge_inputs = _render_edge_configuration(interior.dims)
     if not _validate_preconditions(settings, interior, edge_inputs):
-        return
-
-    if delivery == "Edge File Only":
-        _render_edge_file_only_button(interior, edge_inputs, settings)
         return
 
     _run_full_service(interior, edge_inputs, settings)
