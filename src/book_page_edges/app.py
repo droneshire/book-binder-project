@@ -19,14 +19,12 @@ from book_page_edges.core.config import (
     DEFAULT_EDGE_WIDTH_PTS,
     DEFAULT_FORE_OPACITY,
     DEFAULT_JPEG_QUALITY,
-    KDP_PAGE_WITH_BLEED_HEIGHT_IN,
-    KDP_PAGE_WITH_BLEED_WIDTH_IN,
     PAPER_TYPES_INCH_PER_PAGE,
     PRINTER_PRESETS,
 )
 from book_page_edges.core.image_ops import inches_to_pts
 from book_page_edges.core.models import PageMetrics, PdfAnalysis
-from book_page_edges.core.pdf_factory import add_bleed_to_manuscript
+from book_page_edges.core.pdf_factory import add_bleed_to_manuscript, normalize_trim_sizes
 from book_page_edges.core.processing import (
     EdgeImageSet,
     PlacementOptions,
@@ -243,7 +241,11 @@ def _render_info(
     st.write(f"Bleed detected on source PDF: **{detected}**")
 
     if analysis.mixed_trim_sizes:
-        st.warning("Mixed trim sizes detected across pages.")
+        st.warning(
+            "Mixed trim sizes still detected after normalization attempt. "
+            "Edge calculations use the first page's dimensions — output may be misaligned "
+            "on pages with different trim sizes."
+        )
 
     st.subheader("📏 Required Edge Image Dimensions")
     st.write(f"DPI: **{settings.output.dpi}**")
@@ -373,18 +375,35 @@ def _render_interior_source(settings: SidebarSettings) -> bytes | None:
         st.info("Upload an interior PDF to continue.")
         return None
 
-    if settings.preset == "kdp":
-        st.caption(
-            f"For 6×9 trim with bleed, manuscript page size should be "
-            f"**{KDP_PAGE_WITH_BLEED_WIDTH_IN} × {KDP_PAGE_WITH_BLEED_HEIGHT_IN} in**."
-        )
-
     add_bleed = st.checkbox(
         "Automatically add bleed to manuscript",
         value=True,
-        help="Expand each page by the preset bleed (0.125 in) so content can reach the edge after trim. Use for manuscripts that don't already have bleed.",
+        help="Expand each page by the preset bleed so content can reach the edge after trim. Use for manuscripts that don't already have bleed.",
     )
     pdf_bytes = pdf_upload.getvalue()
+
+    # Normalize mixed trim sizes before any further processing so that edge
+    # calculations are consistent across all pages.
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as _doc:
+        if len(_doc) > 1:
+            _first_trim = _doc[0].trimbox
+            _first_size = (round(_first_trim.width, 4), round(_first_trim.height, 4))
+            _mixed = any(
+                (round(p.trimbox.width, 4), round(p.trimbox.height, 4)) != _first_size
+                for p in _doc
+            )
+        else:
+            _mixed = False
+
+    if _mixed:
+        try:
+            pdf_bytes = normalize_trim_sizes(pdf_bytes)
+            st.info(
+                "Mixed trim sizes detected — all pages have been normalized to the "
+                "first page's trim dimensions."
+            )
+        except (ValueError, RuntimeError) as exc:
+            st.warning(f"Could not normalize trim sizes: {exc}")
 
     if add_bleed:
         try:
@@ -395,7 +414,20 @@ def _render_interior_source(settings: SidebarSettings) -> bytes | None:
         except (ValueError, RuntimeError) as exc:
             st.error(f"Failed to add bleed to manuscript: {exc}")
             return None
-        st.caption("Bleed has been added to your manuscript per KDP specs (0.125 in).")
+
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as _doc:
+            _p0 = _doc[0]
+            _trim = _p0.trimbox
+            _media = _p0.rect
+            _trim_w_in = _trim.width / 72.0
+            _trim_h_in = _trim.height / 72.0
+            _media_w_in = _media.width / 72.0
+            _media_h_in = _media.height / 72.0
+        st.caption(
+            f"Bleed added: trim {_trim_w_in:.3f} × {_trim_h_in:.3f} in → "
+            f"with bleed {_media_w_in:.3f} × {_media_h_in:.3f} in "
+            f"(+{settings.bleed.bleed_in:.3f} in per side)."
+        )
 
     return pdf_bytes
 

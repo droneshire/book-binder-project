@@ -31,6 +31,34 @@ def add_bleed_to_manuscript(pdf_bytes: bytes, bleed_in: float = KDP_BLEED_IN) ->
     return data
 
 
+def normalize_trim_sizes(pdf_bytes: bytes) -> bytes:
+    """Scale all pages to match the first page's trimbox dimensions.
+
+    When a PDF contains pages with different trim sizes, this renders every
+    page into a new document whose pages all share the first page's trim
+    dimensions.  Content is scaled to fill the target rectangle.
+    """
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    if len(doc) == 0:
+        doc.close()
+        return pdf_bytes
+
+    target = doc[0].trimbox
+    target_w, target_h = target.width, target.height
+
+    out = fitz.open()
+    for page in doc:
+        out_page = out.new_page(width=target_w, height=target_h)
+        out_page.show_pdf_page(
+            fitz.Rect(0, 0, target_w, target_h), doc, page.number
+        )
+
+    data = out.tobytes(garbage=4, deflate=True)
+    doc.close()
+    out.close()
+    return data
+
+
 def create_blank_pdf(
     page_count: int,
     trim_width_in: float,
