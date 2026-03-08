@@ -19,8 +19,10 @@ def test_create_blank_pdf_dimensions_and_page_count() -> None:
 
 def test_normalize_trim_sizes_standardizes_pages() -> None:
     """Pages with different trim sizes are scaled to match the first page."""
-    page1 = create_blank_pdf(page_count=1, trim_width_in=6.0, trim_height_in=9.0)
-    page2 = create_blank_pdf(page_count=1, trim_width_in=5.0, trim_height_in=8.0)
+    page1 = create_blank_pdf(
+        page_count=1, trim_width_in=6.0, trim_height_in=9.0)
+    page2 = create_blank_pdf(
+        page_count=1, trim_width_in=5.0, trim_height_in=8.0)
 
     # Build a mixed-size PDF by concatenating the two docs.
     doc1 = fitz.open(stream=page1, filetype="pdf")
@@ -44,7 +46,8 @@ def test_normalize_trim_sizes_standardizes_pages() -> None:
 
 def test_normalize_trim_sizes_uniform_pdf_unchanged_dimensions() -> None:
     """A PDF where all pages already share the same trim size passes through unchanged."""
-    pdf_bytes = create_blank_pdf(page_count=3, trim_width_in=6.0, trim_height_in=9.0)
+    pdf_bytes = create_blank_pdf(
+        page_count=3, trim_width_in=6.0, trim_height_in=9.0)
     out_bytes = normalize_trim_sizes(pdf_bytes)
     with fitz.open(stream=out_bytes, filetype="pdf") as doc:
         assert len(doc) == 3

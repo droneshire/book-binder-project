@@ -49,9 +49,7 @@ def normalize_trim_sizes(pdf_bytes: bytes) -> bytes:
     out = fitz.open()
     for page in doc:
         out_page = out.new_page(width=target_w, height=target_h)
-        out_page.show_pdf_page(
-            fitz.Rect(0, 0, target_w, target_h), doc, page.number
-        )
+        out_page.show_pdf_page(fitz.Rect(0, 0, target_w, target_h), doc, page.number)
 
     data = out.tobytes(garbage=4, deflate=True)
     doc.close()
