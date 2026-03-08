@@ -222,6 +222,165 @@ def _to_data_uri(img: Image.Image) -> str:
     return f"data:image/png;base64,{b64}"
 
 
+def _svg_h_dim(x1: float, x2: float, y: float, label: str, color: str) -> list[str]:
+    """SVG elements for a horizontal dimension line with tick marks and a centered label."""
+
+    mid = (x1 + x2) / 2
+    return [
+        f'  <line x1="{x1:.1f}" y1="{y - 4:.1f}" x2="{x1:.1f}" y2="{y + 4:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <line x1="{x2:.1f}" y1="{y - 4:.1f}" x2="{x2:.1f}" y2="{y + 4:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <line x1="{x1:.1f}" y1="{y:.1f}" x2="{x2:.1f}" y2="{y:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <text x="{mid:.1f}" y="{y + 12:.1f}" text-anchor="middle" '
+        f'fill="{color}" font-size="10">{label}</text>',
+    ]
+
+
+def _svg_v_dim(x: float, y1: float, y2: float, label: str, color: str) -> list[str]:
+    """SVG elements for a vertical dimension line with tick marks and a left-aligned label."""
+
+    mid = (y1 + y2) / 2
+    return [
+        f'  <line x1="{x - 4:.1f}" y1="{y1:.1f}" x2="{x + 4:.1f}" y2="{y1:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <line x1="{x - 4:.1f}" y1="{y2:.1f}" x2="{x + 4:.1f}" y2="{y2:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <line x1="{x:.1f}" y1="{y1:.1f}" x2="{x:.1f}" y2="{y2:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <text x="{x - 8:.1f}" y="{mid:.1f}" text-anchor="end" '
+        f'dominant-baseline="middle" fill="{color}" font-size="10">{label}</text>',
+    ]
+
+
+def _render_dimensions_diagram(
+    analysis: PdfAnalysis,
+    settings: SidebarSettings,
+    bleed_pts: float,
+) -> None:
+    """Render an SVG diagram showing trim, bleed zone, and fore-edge strip dimensions."""
+
+    trim_w_in = analysis.first_trim_w_pts / 72.0
+    trim_h_in = analysis.first_trim_h_pts / 72.0
+    bleed_in = bleed_pts / 72.0
+    edge_in = settings.output.edge_width_pts / 72.0
+
+    # Scale so the trim height renders at ~220 px.
+    scale = 220.0 / max(analysis.first_trim_h_pts, 1.0)
+    tw = analysis.first_trim_w_pts * scale          # trim width (px)
+    th = 220.0                                       # trim height (px)
+    bp = bleed_pts * scale                           # bleed (px)
+    ew = max(settings.output.edge_width_pts * scale, 4.0)  # edge strip (px, min 4)
+
+    ml, mt, mr, mb = 78, 36, 90, 52   # margins: left, top, right, bottom
+    mw = tw + bp                        # media width  (bleed on right only)
+    mh = th + 2 * bp                    # media height (bleed top + bottom)
+    W = ml + mw + mr
+    H = mt + mh + mb
+
+    # Anchor coordinates
+    mx, my = ml, mt             # media box top-left
+    tx, ty = ml, mt + bp        # trim box top-left
+    ex = tx + tw - ew           # fore-edge strip x
+
+    parts: list[str] = []
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.0f}" height="{H:.0f}" '
+        f'style="font-family:ui-monospace,monospace;overflow:visible;">'
+    )
+
+    # Background
+    parts.append(
+        f'  <rect width="{W:.0f}" height="{H:.0f}" fill="#0f172a" rx="10"/>'
+    )
+
+    # Media box (bleed zone)
+    parts.append(
+        f'  <rect x="{mx:.1f}" y="{my:.1f}" width="{mw:.1f}" height="{mh:.1f}" '
+        f'fill="#1e293b" stroke="#475569" stroke-width="1.5"/>'
+    )
+
+    # Trim box (dashed border)
+    parts.append(
+        f'  <rect x="{tx:.1f}" y="{ty:.1f}" width="{tw:.1f}" height="{th:.1f}" '
+        f'fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,3"/>'
+    )
+
+    # Fore-edge strip
+    parts.append(
+        f'  <rect x="{ex:.1f}" y="{ty:.1f}" width="{ew:.1f}" height="{th:.1f}" '
+        f'fill="#f59e0b" opacity="0.85"/>'
+    )
+
+    # Trim area label (centered in the content zone, not the strip)
+    cx = tx + (tw - ew) / 2
+    cy = ty + th / 2
+    parts.append(
+        f'  <text x="{cx:.0f}" y="{cy - 8:.0f}" text-anchor="middle" '
+        f'fill="#93c5fd" font-size="11" font-weight="bold">trim area</text>'
+    )
+    parts.append(
+        f'  <text x="{cx:.0f}" y="{cy + 8:.0f}" text-anchor="middle" '
+        f'fill="#93c5fd" font-size="10">{trim_w_in:.3f}" × {trim_h_in:.3f}"</text>'
+    )
+
+    # "bleed" label inside bottom bleed strip (if tall enough)
+    if bp >= 9:
+        parts.append(
+            f'  <text x="{mx + mw / 2:.0f}" y="{my + mh - bp / 2:.0f}" '
+            f'text-anchor="middle" dominant-baseline="middle" '
+            f'fill="#94a3b8" font-size="9">bleed</text>'
+        )
+
+    # Rotated "fore-edge" label inside the strip
+    smx, smy = ex + ew / 2, ty + th / 2
+    parts.append(
+        f'  <text x="{smx:.0f}" y="{smy:.0f}" text-anchor="middle" '
+        f'dominant-baseline="middle" fill="#1a1a1a" font-size="8" font-weight="bold" '
+        f'transform="rotate(-90 {smx:.0f} {smy:.0f})">fore-edge</text>'
+    )
+
+    # ── Dimension annotations ──
+
+    # Trim width + bleed right (below the diagram)
+    dim_y = my + mh + 14
+    parts.extend(_svg_h_dim(tx, tx + tw, dim_y, f'trim  {trim_w_in:.3f}"', "#3b82f6"))
+    parts.extend(_svg_h_dim(tx + tw, mx + mw, dim_y, f'+{bleed_in:.3f}"', "#f59e0b"))
+
+    # Trim height (left)
+    parts.extend(_svg_v_dim(mx - 14, ty, ty + th, f'{trim_h_in:.3f}"', "#3b82f6"))
+
+    # Bleed top + bottom (further left)
+    if bp >= 4:
+        parts.extend(_svg_v_dim(mx - 42, my, ty, f'+{bleed_in:.3f}"', "#f59e0b"))
+        parts.extend(_svg_v_dim(mx - 42, ty + th, my + mh, f'+{bleed_in:.3f}"', "#f59e0b"))
+
+    # Edge strip width (above the diagram, aligned to the strip)
+    parts.extend(_svg_h_dim(ex, ex + ew, my - 10, f'edge  {edge_in:.3f}"', "#f59e0b"))
+
+    # ── Legend (top-right) ──
+    lx = mx + mw + 12
+    for i, (fill, stroke, dash, lbl, text_color) in enumerate([
+        ("#1e3a5f", "#3b82f6", "4,2", "trim",       "#93c5fd"),
+        ("#1e293b", "#475569", "",    "bleed zone",  "#94a3b8"),
+        ("#f59e0b", "#f59e0b", "",    "edge strip",  "#fbbf24"),
+    ]):
+        ry = my + 10 + i * 20
+        dash_attr = f'stroke-dasharray="{dash}"' if dash else ""
+        parts.append(
+            f'  <rect x="{lx:.0f}" y="{ry:.0f}" width="11" height="11" '
+            f'fill="{fill}" stroke="{stroke}" stroke-width="1" {dash_attr}/>'
+        )
+        parts.append(
+            f'  <text x="{lx + 16:.0f}" y="{ry + 9:.0f}" fill="{text_color}" '
+            f'font-size="10">{lbl}</text>'
+        )
+
+    parts.append("</svg>")
+    st.markdown("\n".join(parts), unsafe_allow_html=True)
+
+
 def _render_info(
     analysis: PdfAnalysis,
     dims: dict[str, int],
@@ -246,6 +405,9 @@ def _render_info(
             "Edge calculations use the first page's dimensions — output may be misaligned "
             "on pages with different trim sizes."
         )
+
+    st.subheader("📐 Page Layout")
+    _render_dimensions_diagram(analysis, settings, bleed_pts)
 
     st.subheader("📏 Required Edge Image Dimensions")
     st.write(f"DPI: **{settings.output.dpi}**")
