@@ -11,7 +11,7 @@ from typing import Any
 
 import fitz
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from book_page_edges.core.analysis import analyze_pdf, expected_edge_dimensions
 from book_page_edges.core.config import (
@@ -19,14 +19,15 @@ from book_page_edges.core.config import (
     DEFAULT_EDGE_WIDTH_PTS,
     DEFAULT_FORE_OPACITY,
     DEFAULT_JPEG_QUALITY,
-    KDP_PAGE_WITH_BLEED_HEIGHT_IN,
-    KDP_PAGE_WITH_BLEED_WIDTH_IN,
     PAPER_TYPES_INCH_PER_PAGE,
     PRINTER_PRESETS,
 )
 from book_page_edges.core.image_ops import inches_to_pts
 from book_page_edges.core.models import PageMetrics, PdfAnalysis
-from book_page_edges.core.pdf_factory import add_bleed_to_manuscript
+from book_page_edges.core.pdf_factory import (
+    add_bleed_to_manuscript,
+    normalize_trim_sizes,
+)
 from book_page_edges.core.processing import (
     EdgeImageSet,
     PlacementOptions,
@@ -224,11 +225,244 @@ def _to_data_uri(img: Image.Image) -> str:
     return f"data:image/png;base64,{b64}"
 
 
+def _svg_h_dim(x1: float, x2: float, y: float, label: str, color: str) -> list[str]:
+    """SVG elements for a horizontal dimension line with tick marks and a centered label."""
+
+    mid = (x1 + x2) / 2
+    return [
+        f'  <line x1="{x1:.1f}" y1="{y - 4:.1f}" x2="{x1:.1f}" y2="{y + 4:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <line x1="{x2:.1f}" y1="{y - 4:.1f}" x2="{x2:.1f}" y2="{y + 4:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <line x1="{x1:.1f}" y1="{y:.1f}" x2="{x2:.1f}" y2="{y:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <text x="{mid:.1f}" y="{y + 12:.1f}" text-anchor="middle" '
+        f'fill="{color}" font-size="10">{label}</text>',
+    ]
+
+
+def _svg_v_dim(x: float, y1: float, y2: float, label: str, color: str) -> list[str]:
+    """SVG elements for a vertical dimension line with tick marks and a left-aligned label."""
+
+    mid = (y1 + y2) / 2
+    return [
+        f'  <line x1="{x - 4:.1f}" y1="{y1:.1f}" x2="{x + 4:.1f}" y2="{y1:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <line x1="{x - 4:.1f}" y1="{y2:.1f}" x2="{x + 4:.1f}" y2="{y2:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <line x1="{x:.1f}" y1="{y1:.1f}" x2="{x:.1f}" y2="{y2:.1f}" '
+        f'stroke="{color}" stroke-width="1"/>',
+        f'  <text x="{x - 8:.1f}" y="{mid:.1f}" text-anchor="end" '
+        f'dominant-baseline="middle" fill="{color}" font-size="10">{label}</text>',
+    ]
+
+
+def _render_dimensions_diagram(  # pylint: disable=too-many-locals
+    analysis: PdfAnalysis,
+    settings: SidebarSettings,
+    bleed_pts: float,
+) -> None:
+    """Render an SVG diagram showing trim, bleed zone, and fore-edge strip dimensions."""
+
+    trim_w_in = analysis.first_trim_w_pts / 72.0
+    trim_h_in = analysis.first_trim_h_pts / 72.0
+    bleed_in = bleed_pts / 72.0
+    edge_in = settings.output.edge_width_pts / 72.0
+
+    # Scale so the trim height renders at ~220 px.
+    scale = 220.0 / max(analysis.first_trim_h_pts, 1.0)
+    tw = analysis.first_trim_w_pts * scale  # trim width (px)
+    th = 220.0  # trim height (px)
+    bp = bleed_pts * scale  # bleed (px)
+    ew = max(settings.output.edge_width_pts * scale, 4.0)  # edge strip (px, min 4)
+
+    ml, mt, mr, mb = 78, 36, 90, 52  # margins: left, top, right, bottom
+    mw = tw + bp  # media width  (bleed on right only)
+    mh = th + 2 * bp  # media height (bleed top + bottom)
+    svg_w = ml + mw + mr
+    svg_h = mt + mh + mb
+
+    # Anchor coordinates
+    mx, my = ml, mt  # media box top-left
+    tx, ty = ml, mt + bp  # trim box top-left
+    ex = tx + tw - ew  # fore-edge strip x
+
+    parts: list[str] = []
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{svg_w:.0f}" height="{svg_h:.0f}" '
+        f'style="font-family:ui-monospace,monospace;overflow:visible;">'
+    )
+
+    # Background
+    parts.append(
+        f'  <rect width="{svg_w:.0f}" height="{svg_h:.0f}" fill="#0f172a" rx="10"/>'
+    )
+
+    # Media box (bleed zone)
+    parts.append(
+        f'  <rect x="{mx:.1f}" y="{my:.1f}" width="{mw:.1f}" height="{mh:.1f}" '
+        f'fill="#1e293b" stroke="#475569" stroke-width="1.5"/>'
+    )
+
+    # Trim box (dashed border)
+    parts.append(
+        f'  <rect x="{tx:.1f}" y="{ty:.1f}" width="{tw:.1f}" height="{th:.1f}" '
+        f'fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,3"/>'
+    )
+
+    # Fore-edge strip
+    parts.append(
+        f'  <rect x="{ex:.1f}" y="{ty:.1f}" width="{ew:.1f}" height="{th:.1f}" '
+        f'fill="#f59e0b" opacity="0.85"/>'
+    )
+
+    # Trim area label (centered in the content zone, not the strip)
+    cx = tx + (tw - ew) / 2
+    cy = ty + th / 2
+    parts.append(
+        f'  <text x="{cx:.0f}" y="{cy - 8:.0f}" text-anchor="middle" '
+        f'fill="#93c5fd" font-size="11" font-weight="bold">trim area</text>'
+    )
+    parts.append(
+        f'  <text x="{cx:.0f}" y="{cy + 8:.0f}" text-anchor="middle" '
+        f'fill="#93c5fd" font-size="10">{trim_w_in:.3f}" × {trim_h_in:.3f}"</text>'
+    )
+
+    # "bleed" label inside bottom bleed strip (if tall enough)
+    if bp >= 9:
+        parts.append(
+            f'  <text x="{mx + mw / 2:.0f}" y="{my + mh - bp / 2:.0f}" '
+            f'text-anchor="middle" dominant-baseline="middle" '
+            f'fill="#94a3b8" font-size="9">bleed</text>'
+        )
+
+    # Rotated "fore-edge" label inside the strip
+    smx, smy = ex + ew / 2, ty + th / 2
+    parts.append(
+        f'  <text x="{smx:.0f}" y="{smy:.0f}" text-anchor="middle" '
+        f'dominant-baseline="middle" fill="#1a1a1a" font-size="8" font-weight="bold" '
+        f'transform="rotate(-90 {smx:.0f} {smy:.0f})">fore-edge</text>'
+    )
+
+    # ── Dimension annotations ──
+
+    # Trim width + bleed right (below the diagram)
+    dim_y = my + mh + 14
+    parts.extend(_svg_h_dim(tx, tx + tw, dim_y, f'trim  {trim_w_in:.3f}"', "#3b82f6"))
+    parts.extend(_svg_h_dim(tx + tw, mx + mw, dim_y, f'+{bleed_in:.3f}"', "#f59e0b"))
+
+    # Trim height (left)
+    parts.extend(_svg_v_dim(mx - 14, ty, ty + th, f'{trim_h_in:.3f}"', "#3b82f6"))
+
+    # Bleed top + bottom (further left)
+    if bp >= 4:
+        parts.extend(_svg_v_dim(mx - 42, my, ty, f'+{bleed_in:.3f}"', "#f59e0b"))
+        parts.extend(
+            _svg_v_dim(mx - 42, ty + th, my + mh, f'+{bleed_in:.3f}"', "#f59e0b")
+        )
+
+    # Edge strip width (above the diagram, aligned to the strip)
+    parts.extend(_svg_h_dim(ex, ex + ew, my - 10, f'edge  {edge_in:.3f}"', "#f59e0b"))
+
+    # ── Legend (top-right) ──
+    lx = mx + mw + 12
+    for i, (fill, stroke, dash, lbl, text_color) in enumerate(
+        [
+            ("#1e3a5f", "#3b82f6", "4,2", "trim", "#93c5fd"),
+            ("#1e293b", "#475569", "", "bleed zone", "#94a3b8"),
+            ("#f59e0b", "#f59e0b", "", "edge strip", "#fbbf24"),
+        ]
+    ):
+        ry = my + 10 + i * 20
+        dash_attr = f'stroke-dasharray="{dash}"' if dash else ""
+        parts.append(
+            f'  <rect x="{lx:.0f}" y="{ry:.0f}" width="11" height="11" '
+            f'fill="{fill}" stroke="{stroke}" stroke-width="1" {dash_attr}/>'
+        )
+        parts.append(
+            f'  <text x="{lx + 16:.0f}" y="{ry + 9:.0f}" fill="{text_color}" '
+            f'font-size="10">{lbl}</text>'
+        )
+
+    parts.append("</svg>")
+    st.markdown("\n".join(parts), unsafe_allow_html=True)
+
+
+def _render_page_overlay(  # pylint: disable=too-many-locals
+    pdf_bytes: bytes,
+    analysis: PdfAnalysis,
+    settings: SidebarSettings,
+    bleed_pts: float,
+) -> Image.Image:
+    """Render the first PDF page with trim, bleed, and fore-edge annotations overlaid."""
+
+    preview_dpi = 96
+    scale = preview_dpi / 72.0
+
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        page = doc[0]
+        pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+        media = page.rect
+        trim = page.trimbox
+
+    # Trim box in pixel coordinates relative to the media box origin.
+    trim_x0 = round((trim.x0 - media.x0) * scale)
+    trim_y0 = round((trim.y0 - media.y0) * scale)
+    trim_x1 = round((trim.x1 - media.x0) * scale)
+    trim_y1 = round((trim.y1 - media.y0) * scale)
+    edge_px = max(round(settings.output.edge_width_pts * scale), 2)
+
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # Bleed region tint (outside the trim box)
+    draw.rectangle([0, 0, img.width - 1, img.height - 1], fill=(100, 100, 100, 80))
+    # Clear the trim interior so the original content shows through
+    draw.rectangle([trim_x0, trim_y0, trim_x1, trim_y1], fill=(0, 0, 0, 0))
+
+    # Fore-edge strip (amber, right side of trim)
+    draw.rectangle(
+        [trim_x1 - edge_px, trim_y0, trim_x1, trim_y1],
+        fill=(245, 158, 11, 160),
+    )
+
+    # Trim box border (blue)
+    draw.rectangle(
+        [trim_x0, trim_y0, trim_x1, trim_y1],
+        outline=(59, 130, 246, 230),
+        width=2,
+    )
+
+    result = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+
+    # Dimension labels using a simple ImageDraw text pass
+    label_draw = ImageDraw.Draw(result)
+    trim_w_in = analysis.first_trim_w_pts / 72.0
+    trim_h_in = analysis.first_trim_h_pts / 72.0
+    bleed_in = bleed_pts / 72.0
+    edge_in = settings.output.edge_width_pts / 72.0
+    cx = (trim_x0 + trim_x1 - edge_px) // 2
+    cy = (trim_y0 + trim_y1) // 2
+
+    for text, x, y, color in [
+        (f'{trim_w_in:.3f}" × {trim_h_in:.3f}"', cx, cy - 8, (147, 197, 253)),
+        (f'bleed +{bleed_in:.3f}"', trim_x1 + 4, trim_y0 + 4, (251, 191, 36)),
+        (f'edge {edge_in:.3f}"', trim_x1 - edge_px - 2, trim_y0 - 14, (251, 191, 36)),
+    ]:
+        # Shadow for legibility
+        label_draw.text((x + 1, y + 1), text, fill=(0, 0, 0), anchor="mm")
+        label_draw.text((x, y), text, fill=color, anchor="mm")
+
+    return result
+
+
 def _render_info(
     analysis: PdfAnalysis,
     dims: dict[str, int],
     settings: SidebarSettings,
     bleed_pts: float,
+    pdf_bytes: bytes,
 ) -> None:
     """Render the analysis and sizing section."""
 
@@ -243,7 +477,21 @@ def _render_info(
     st.write(f"Bleed detected on source PDF: **{detected}**")
 
     if analysis.mixed_trim_sizes:
-        st.warning("Mixed trim sizes detected across pages.")
+        st.warning(
+            "Mixed trim sizes still detected after normalization attempt. "
+            "Edge calculations use the first page's dimensions — output may be misaligned "
+            "on pages with different trim sizes."
+        )
+
+    st.subheader("📐 Page Layout")
+    col_page, col_schema = st.columns([1, 1])
+    with col_page:
+        st.caption("First page with annotations")
+        overlay_img = _render_page_overlay(pdf_bytes, analysis, settings, bleed_pts)
+        st.image(overlay_img, use_container_width=True)
+    with col_schema:
+        st.caption("Schematic (not to scale)")
+        _render_dimensions_diagram(analysis, settings, bleed_pts)
 
     st.subheader("📏 Required Edge Image Dimensions")
     st.write(f"DPI: **{settings.output.dpi}**")
@@ -359,7 +607,9 @@ def _render_sidebar() -> SidebarSettings:
     )
 
 
-def _render_interior_source(settings: SidebarSettings) -> bytes | None:
+def _render_interior_source(  # pylint: disable=too-many-locals
+    settings: SidebarSettings,
+) -> bytes | None:
     """Render interior source controls and return resolved PDF bytes."""
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
@@ -373,18 +623,35 @@ def _render_interior_source(settings: SidebarSettings) -> bytes | None:
         st.info("Upload an interior PDF to continue.")
         return None
 
-    if settings.preset == "kdp":
-        st.caption(
-            f"For 6×9 trim with bleed, manuscript page size should be "
-            f"**{KDP_PAGE_WITH_BLEED_WIDTH_IN} × {KDP_PAGE_WITH_BLEED_HEIGHT_IN} in**."
-        )
-
     add_bleed = st.checkbox(
         "Automatically add bleed to manuscript",
         value=True,
-        help="Expand each page by the preset bleed (0.125 in) so content can reach the edge after trim. Use for manuscripts that don't already have bleed.",
+        help="Expand each page by the preset bleed so content can reach the edge after trim. Use for manuscripts that don't already have bleed.",
     )
     pdf_bytes = pdf_upload.getvalue()
+
+    # Normalize mixed trim sizes before any further processing so that edge
+    # calculations are consistent across all pages.
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as _doc:
+        if len(_doc) > 1:
+            _first_trim = _doc[0].trimbox
+            _first_size = (round(_first_trim.width, 4), round(_first_trim.height, 4))
+            _mixed = any(
+                (round(p.trimbox.width, 4), round(p.trimbox.height, 4)) != _first_size
+                for p in _doc
+            )
+        else:
+            _mixed = False
+
+    if _mixed:
+        try:
+            pdf_bytes = normalize_trim_sizes(pdf_bytes)
+            st.info(
+                "Mixed trim sizes detected — all pages have been normalized to the "
+                "first page's trim dimensions."
+            )
+        except (ValueError, RuntimeError) as exc:
+            st.warning(f"Could not normalize trim sizes: {exc}")
 
     if add_bleed:
         try:
@@ -395,7 +662,20 @@ def _render_interior_source(settings: SidebarSettings) -> bytes | None:
         except (ValueError, RuntimeError) as exc:
             st.error(f"Failed to add bleed to manuscript: {exc}")
             return None
-        st.caption("Bleed has been added to your manuscript per KDP specs (0.125 in).")
+
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as _doc:
+            _p0 = _doc[0]
+            _trim = _p0.trimbox
+            _media = _p0.rect
+            _trim_w_in = _trim.width / 72.0
+            _trim_h_in = _trim.height / 72.0
+            _media_w_in = _media.width / 72.0
+            _media_h_in = _media.height / 72.0
+        st.caption(
+            f"Bleed added: trim {_trim_w_in:.3f} × {_trim_h_in:.3f} in → "
+            f"with bleed {_media_w_in:.3f} × {_media_h_in:.3f} in "
+            f"(+{settings.bleed.bleed_in:.3f} in per side)."
+        )
 
     return pdf_bytes
 
@@ -428,6 +708,7 @@ def _prepare_interior_data(
         dims=dims,
         settings=settings,
         bleed_pts=bleed_pts,
+        pdf_bytes=pdf_bytes,
     )
 
     return InteriorData(
